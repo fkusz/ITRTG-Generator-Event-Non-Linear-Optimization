@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "vector": "cpp",
+        "random": "cpp",
+        "algorithm": "cpp",
+        "iostream": "cpp",
+        "xutility": "cpp"
+    },
+    "cmake.sourceDirectory": "C:/Users/Foster/Documents/Visual Studio/Easter_2025_Event"
+}
