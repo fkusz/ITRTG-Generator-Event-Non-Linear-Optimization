@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(Easter_2025_Event)
+project(ITRTG Generator Events)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -17,4 +17,4 @@ elseif(MSVC)
 endif()
 
 # Add executable
-add_executable(Easter_v2 "Copy of Easter v2.cpp")
+add_executable(Easter_v2 "Easter_2025_v2.cpp")
