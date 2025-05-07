@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(ITRTG Generator Events)
+project(ITRTG_Generator_Event_Non_Linear_Optimization)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)

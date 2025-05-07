@@ -1,6 +1,6 @@
-^C:\USERS\FOSTER\DOCUMENTS\VISUAL STUDIO\EASTER_2025_EVENT\BUILD\CMAKEFILES\3F4FE0244E4FFD42BA1E5CBDA46B311E\GENERATE.STAMP.RULE
+^C:\USERS\FOSTER\DOCUMENTS\GITHUB\ITRTG-GENERATOR-EVENT-NON-LINEAR-OPTIMIZATION\BUILD\CMAKEFILES\04EA610AD4C4F6A3DDE0203454841E65\GENERATE.STAMP.RULE
 setlocal
-C:\Users\Foster\Documents\CMake\bin\cmake.exe "-SC:/Users/Foster/Documents/Visual Studio/Easter_2025_Event" "-BC:/Users/Foster/Documents/Visual Studio/Easter_2025_Event/build" --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file "C:/Users/Foster/Documents/Visual Studio/Easter_2025_Event/build/Easter_2025_Event.sln"
+C:\Users\Foster\Documents\CMake\bin\cmake.exe -SC:/Users/Foster/Documents/GitHub/ITRTG-Generator-Event-Non-Linear-Optimization -BC:/Users/Foster/Documents/GitHub/ITRTG-Generator-Event-Non-Linear-Optimization/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/Foster/Documents/GitHub/ITRTG-Generator-Event-Non-Linear-Optimization/build/ITRTG_Generator_Event_Non_Linear_Optimization.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone

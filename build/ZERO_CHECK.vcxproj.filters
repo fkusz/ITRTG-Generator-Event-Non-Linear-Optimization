@@ -1,13 +1,13 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <CustomBuild Include="C:\Users\Foster\Documents\Visual Studio\Easter_2025_Event\build\CMakeFiles\3f4fe0244e4ffd42ba1e5cbda46b311e\generate.stamp.rule">
+    <CustomBuild Include="C:\Users\Foster\Documents\GitHub\ITRTG-Generator-Event-Non-Linear-Optimization\build\CMakeFiles\04ea610ad4c4f6a3dde0203454841e65\generate.stamp.rule">
       <Filter>CMake Rules</Filter>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="CMake Rules">
-      <UniqueIdentifier>{827BC5C0-5383-32C8-AF40-77C8C02AAF33}</UniqueIdentifier>
+      <UniqueIdentifier>{F5386B91-0656-3070-A847-022395EE9AE5}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

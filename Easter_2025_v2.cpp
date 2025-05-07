@@ -132,17 +132,6 @@
       * @param expectedUpgradeTime Time when the upgrade is expected to be purchased
       * @return Time needed to purchase the upgrade
       */
-    // double additionalTimeNeeded(vector<double> startTimes, vector<double> endTimes, double expectedUpgradeTime) {
-    //     double timeNeeded = 0;
-    //     // If the expected upgrade time is during a busy time, calculate how long until the user can get to their device
-    //     for (int i = 0; i < startTimes.size(); i++) {
-    //         if (startTimes[i] <= expectedUpgradeTime && endTimes[i] >= expectedUpgradeTime) {
-    //             timeNeeded = endTimes[i] - expectedUpgradeTime;
-    //             break;
-    //         }
-    //     }
-    //     return timeNeeded;
-    // }
 
     double additionalTimeNeeded(const vector<double>& startTimes, const vector<double>& endTimes, double expectedTime) {
         auto it = std::lower_bound(startTimes.begin(), startTimes.end(), expectedTime);
