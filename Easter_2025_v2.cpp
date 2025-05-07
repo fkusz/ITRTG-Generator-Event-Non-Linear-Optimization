@@ -413,7 +413,7 @@
         static vector<double> testResources;
         static vector<int> testLevels;
 
-        // Choose random position for insertion
+        // Choose random starting position for insertion
         uniform_int_distribution<> positionDist(0, pathLength);
         int insertPosition = positionDist(randomEngine);
 
