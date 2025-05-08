@@ -16,6 +16,7 @@
     #include <numeric>
     #include <algorithm>
     #include <ctime> 
+    #include <array>
     using namespace std;
     typedef long long ll;
     
@@ -30,7 +31,7 @@
     const int DLs = 369;       // Top 50 DLs from stats page (Dungeon Levels)
     
     // Current upgrade levels (in same order as in game)
-    vector<int> currentLevels = { 
+    std::array<int,21> currentLevels = { 
         // Production Levels
         0, 1, 0,     // Red, White, Blue
         0, 0, 0,      // Green, Colorful, Yellow
@@ -47,7 +48,7 @@
     };
     
     // Current resource counts (Red, White, Blue, etc.)
-    vector<double> resourceCounts = { 
+    std::array<double, 10> resourceCounts = { 
         0,  500000, 0,    // Red, White, Blue
         0,  0, 0,   // Green, Colorful, Yellow
         0/(UNLOCKED_PETS/100.0),   // Growth (scaled by pets)
@@ -96,11 +97,11 @@
     //------------------------------------------------------------------
     
     // Define resource names (in same order as in game)
-    const vector<string> resourceNames = {"Red", "White", "Blue", "Green", "Colorful", "Yellow", "GROWTH", "FREE_EXP", "PET_STONES", "EVENT_CURRENCY"};
+    constexpr std::array<const char*, 10> resourceNames = {"Red", "White", "Blue", "Green", "Colorful", "Yellow", "GROWTH", "FREE_EXP", "PET_STONES", "EVENT_CURRENCY"};
     
-    const double INFINITY_VALUE = (1e100);
-    const int NUM_RESOURCES = resourceNames.size();
-    const int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
+    constexpr double INFINITY_VALUE = (1e100);
+    constexpr int NUM_RESOURCES = resourceNames.size();
+    constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
     
     /*
     Resource indices:
@@ -125,6 +126,32 @@
     bool allRemovesWorse = false;
     bool allSwapsWorse = false;
     
+    //std::array<bool, TOTAL_SECONDS> busySeconds{};
+    std::array<double, TOTAL_SECONDS> timeNeededSeconds{};
+    
+    // Convert busy times from hours to seconds and build a lookup table for blazing fast speeds
+    void preprocessBusyTimes(const std::vector<double>& startHours, const std::vector<double>& endHours) {
+        // Mark busy seconds
+        for (size_t i = 0; i < startHours.size(); ++i) {
+            int startSec = static_cast<int>(startHours[i] * 3600.0);
+            int endSec = static_cast<int>(endHours[i] * 3600.0);
+            startSec = min(startSec, TOTAL_SECONDS - 1);
+            endSec = min(endSec, TOTAL_SECONDS - 1);
+    
+            for (int s = startSec; s <= endSec; ++s) {
+                //busySeconds[s] = true;
+                timeNeededSeconds[s] = endSec - s;
+            }
+        }
+    }
+    
+    // Check if the given time (in seconds) is within a busy period, and how much longer it will remain busy
+    inline double additionalTimeNeeded(double expectedTimeSeconds) {
+        int idx = static_cast<int>(expectedTimeSeconds);
+        if (idx < 0 || idx >= TOTAL_SECONDS) return 0.0;
+        return timeNeededSeconds[idx];
+    }
+
     /**
       * Calculates additional time for the upgrade to be purchased if the user is busy at the expected upgrade time
       * @param startTimes Start times of busy times
@@ -133,15 +160,15 @@
       * @return Time needed to purchase the upgrade
       */
 
-    double additionalTimeNeeded(const vector<double>& startTimes, const vector<double>& endTimes, double expectedTime) {
-        auto it = std::lower_bound(startTimes.begin(), startTimes.end(), expectedTime);
-        size_t idx = it - startTimes.begin();
-        if (idx < startTimes.size() && expectedTime >= startTimes[idx] && expectedTime <= endTimes[idx])
-            return endTimes[idx] - expectedTime;
-        if (idx > 0 && expectedTime >= startTimes[idx - 1] && expectedTime <= endTimes[idx - 1])
-            return endTimes[idx - 1] - expectedTime;
-        return 0.0;
-    }
+    // double additionalTimeNeeded(const vector<double>& startTimes, const vector<double>& endTimes, double expectedTime) {
+    //     auto it = std::lower_bound(startTimes.begin(), startTimes.end(), expectedTime);
+    //     size_t idx = it - startTimes.begin();
+    //     if (idx < startTimes.size() && expectedTime >= startTimes[idx] && expectedTime <= endTimes[idx])
+    //         return endTimes[idx] - expectedTime;
+    //     if (idx > 0 && expectedTime >= startTimes[idx - 1] && expectedTime <= endTimes[idx - 1])
+    //         return endTimes[idx - 1] - expectedTime;
+    //     return 0.0;
+    // }
 
     /**
      * Interweave two paths together
@@ -185,7 +212,7 @@
      * @param remainingTime Remaining time in the event
      * @return Time taken for the upgrade
      */
-    double performUpgrade(vector<int>& levels, vector<double>& resources, int upgradeType, double& remainingTime) {
+    double performUpgrade(std::array<int,21>& levels, std::array<double, 10>& resources, int upgradeType, double& remainingTime) {
         constexpr double cycleTimeMultiplier[10] = {
             1.0/3.0,    // 0
             1.0,        // 1
@@ -224,8 +251,10 @@
         if (upgradeType >= NUM_RESOURCES) baseCost *= 2.0;     // Speed upgrades cost twice as much
 
         
-        double cost[10] = {};
-        double productionRates[10] = {};
+        static std::array<double, 10> cost = {};
+        static std::array<double, 10> productionRates = {};
+        cost = {};
+        productionRates = {};
         
         // Set upgrade costs based on resource type. Some resources' costs are scaled by a constant factor of the base cost.
         switch (resourceType) {
@@ -268,16 +297,16 @@
         }
         
         // Calculate current production rates
-        productionRates[0] = levels[0] * cycleTimeMultiplier[0] * speedMultipliers[min(levels[10], 10)]; // A loop is deliberately omitted here for efficiency.
-        productionRates[1] = levels[1] * cycleTimeMultiplier[1] * speedMultipliers[min(levels[11], 10)]; // Short loops with regular array indexing are slower than writing out each case.
-        productionRates[2] = levels[2] * cycleTimeMultiplier[2] * speedMultipliers[min(levels[12], 10)];
-        productionRates[3] = levels[3] * cycleTimeMultiplier[3] * speedMultipliers[min(levels[13], 10)];
-        productionRates[4] = levels[4] * cycleTimeMultiplier[4] * speedMultipliers[min(levels[14], 10)];
-        productionRates[5] = levels[5] * cycleTimeMultiplier[5] * speedMultipliers[min(levels[15], 10)];
-        productionRates[6] = levels[6] * cycleTimeMultiplier[6] * speedMultipliers[min(levels[16], 10)];
-        productionRates[7] = levels[7] * cycleTimeMultiplier[7] * speedMultipliers[min(levels[17], 10)];
-        productionRates[8] = levels[8] * cycleTimeMultiplier[8] * speedMultipliers[min(levels[18], 10)];
-        productionRates[9] = levels[9] * cycleTimeMultiplier[9] * speedMultipliers[min(levels[19], 10)];
+        productionRates[0] = levels[0] * cycleTimeMultiplier[0] * speedMultipliers[levels[10]]; // A loop is deliberately omitted here for efficiency.
+        productionRates[1] = levels[1] * cycleTimeMultiplier[1] * speedMultipliers[levels[11]]; // Short loops with regular array indexing are slower than writing out each case.
+        productionRates[2] = levels[2] * cycleTimeMultiplier[2] * speedMultipliers[levels[12]];
+        productionRates[3] = levels[3] * cycleTimeMultiplier[3] * speedMultipliers[levels[13]];
+        productionRates[4] = levels[4] * cycleTimeMultiplier[4] * speedMultipliers[levels[14]];
+        productionRates[5] = levels[5] * cycleTimeMultiplier[5] * speedMultipliers[levels[15]];
+        productionRates[6] = levels[6] * cycleTimeMultiplier[6] * speedMultipliers[levels[16]];
+        productionRates[7] = levels[7] * cycleTimeMultiplier[7] * speedMultipliers[levels[17]];
+        productionRates[8] = levels[8] * cycleTimeMultiplier[8] * speedMultipliers[levels[18]];
+        productionRates[9] = levels[9] * cycleTimeMultiplier[9] * speedMultipliers[levels[19]];
         
         // Calculate time needed for the upgrade
         double timeNeeded = 0;
@@ -293,7 +322,8 @@
         }
     
         // Check if the user can purchase the upgrade at the specified time; given their schedule
-        timeNeeded += additionalTimeNeeded(busyTimesStart, busyTimesEnd, timeElapsed + timeNeeded);
+        // timeNeeded += additionalTimeNeeded(busyTimesStart, busyTimesEnd, timeElapsed + timeNeeded);
+        timeNeeded += additionalTimeNeeded(timeElapsed + timeNeeded);
         
         // Check if we have enough time left
         if (timeNeeded >= remainingTime || upgradeType == (2 * NUM_RESOURCES)) {
@@ -337,7 +367,7 @@
      * @param display Whether to display detailed progress
      * @return Remaining time after all upgrades
      */
-    double simulateUpgradePath(vector<int>& path, vector<int>& levels, vector<double>& resources, 
+    double simulateUpgradePath(vector<int>& path, std::array<int,21>& levels, std::array<double, 10>& resources, 
                               double time = TOTAL_SECONDS, bool display = false) {
         for (auto upgradeType : path) {
             if (time < 1e-3) return 0; // No time left
@@ -365,7 +395,7 @@
      * @param display Whether to display score components
      * @return Overall score based on weighted rewards
      */
-    double calculateScore(vector<double>& resources, bool display = false) {
+    double calculateScore(std::array<double, 10>& resources, bool display = false) {
         double score = 0;
         
         // Base score is sum of all resources (very small weight)
@@ -403,15 +433,21 @@
         cout << endl;
     }
 
+    template <typename T, size_t N>
+    void printArray(array<T,N>& x) {
+        for (auto item : x) cout << item << ",";
+        cout << endl;
+    }
+
     bool tryInsertUpgrade(vector<int>& upgradePath, double& finalScore, 
-        const vector<double>& resourceCounts, const vector<int>& currentLevels,
+        const std::array<double, 10>& resourceCounts, const std::array<int,21>& currentLevels,
         mt19937& randomEngine, bool allowSpeedUpgrades, bool verbose = false) {
 
         int pathLength = upgradePath.size() - 1;
         static vector<int> candidatePath;
         candidatePath = upgradePath;
-        static vector<double> testResources;
-        static vector<int> testLevels;
+        static std::array<double, 10> testResources;
+        static std::array<int,21> testLevels;
 
         // Choose random starting position for insertion
         uniform_int_distribution<> positionDist(0, pathLength);
@@ -457,7 +493,7 @@
 
     // Helper function to try removing an upgrade and return if improvement was made
     bool tryRemoveUpgrade(vector<int>& upgradePath, double& finalScore, 
-        const vector<double>& resourceCounts, const vector<int>& currentLevels,
+        const std::array<double, 10>& resourceCounts, const std::array<int,21>& currentLevels,
         mt19937& randomEngine, bool allowSpeedUpgrades, bool verbose = false) {
 
         int pathLength = upgradePath.size() - 1;
@@ -466,8 +502,8 @@
         double bestNewScore = finalScore;
         int bestRemovePosition = -1;
 
-        static vector<double> testResources;
-        static vector<int> testLevels;
+        static std::array<double, 10> testResources;
+        static std::array<int,21> testLevels;
 
         // Try removing the completion marker temporarily
         candidatePath.pop_back();
@@ -519,7 +555,7 @@
 
     // Helper function to try swapping upgrades and return if improvement was made
     bool trySwapUpgrades(vector<int>& upgradePath, double& finalScore, 
-        const vector<double>& resourceCounts, const vector<int>& currentLevels,
+        const std::array<double, 10>& resourceCounts, const std::array<int,21>& currentLevels,
         mt19937& randomEngine, bool allowSpeedUpgrades, bool verbose = false) {
 
         int pathLength = upgradePath.size() - 1;
@@ -527,8 +563,8 @@
         candidatePath = upgradePath;
         double newScore = finalScore;
 
-        static vector<double> testResources;
-        static vector<int> testLevels;
+        static std::array<double, 10> testResources;
+        static std::array<int,21> testLevels;
 
         // Choose a random starting point for swap attempts
         uniform_int_distribution<> swapDist(0, pathLength - 2);
@@ -578,15 +614,15 @@
 
     // Tries to rotate subsequences and return if improvement was made. Should be adapted to perform exhaustive rotations like the rest of the functions.
     bool tryRotateSubsequences(vector<int>& upgradePath, double& finalScore, 
-        const vector<double>& resourceCounts, const vector<int>& currentLevels,
+        const std::array<double, 10>& resourceCounts, const std::array<int,21>& currentLevels,
         mt19937& randomEngine, bool allowSpeedUpgrades, bool verbose = false) {
 
         int pathLength = upgradePath.size() - 1;
         static vector<int> candidatePath;
         double newScore = finalScore;
 
-        static vector<double> testResources;
-        static vector<int> testLevels;
+        static std::array<double, 10> testResources;
+        static std::array<int,21> testLevels;
 
         uniform_int_distribution<> rotateDist(0, pathLength - 4); // A maximum of three less than the final index of the path (Final index is end-marker, which shouldn't be rotated)
 
@@ -631,11 +667,11 @@
         return false;
     }
 
-    bool tryNewPath(vector<int>& upgradePath, const vector<double>& resourceCounts, const vector<int>& currentLevels, double& finalScore);
+    bool tryNewPath(vector<int>& upgradePath, const std::array<double, 10>& resourceCounts, const std::array<int,21>& currentLevels, double& finalScore);
 
     // Main optimization loop - to replace the current while(true) loop in main()
     void optimizeUpgradePath(vector<int>& upgradePath, double& finalScore, 
-        const vector<double>& resourceCounts, const vector<int>& currentLevels,
+        const std::array<double, 10>& resourceCounts, const std::array<int,21>& currentLevels,
         int maxIterations = 10000, int outputInterval = 100, bool skipAuxPath = true) {
 
         random_device seed;
@@ -721,10 +757,10 @@
         }
     }
     
-    bool tryNewPath(vector<int>& upgradePath, const vector<double>& resourceCounts, const vector<int>& currentLevels, double& finalScore){
+    bool tryNewPath(vector<int>& upgradePath, const std::array<double, 10>& resourceCounts, const std::array<int,21>& currentLevels, double& finalScore){
         static vector<int> auxiliaryPath;
-        static vector<double> testResources;
-        static vector<int> testLevels;
+        static std::array<double, 10> testResources;
+        static std::array<int,21> testLevels;
         double auxiliaryScore = 0;
 
         auxiliaryPath = {};
@@ -787,16 +823,17 @@
 
         // Initialize upgrade names
         for (int i = 0; i < NUM_RESOURCES; i++) {
-            upgradeNames[i] = resourceNames[i] + "_Level";
-            upgradeNames[i + NUM_RESOURCES] = resourceNames[i] + "_Speed";
+            upgradeNames[i] = std::string(resourceNames[i]) + "_Level";
+            upgradeNames[i + NUM_RESOURCES] = std::string(resourceNames[i]) + "_Speed";
         }
         upgradeNames[20] = "Complete";
     
         // Convert busy times to seconds
-        for (int i = 0; i < busyTimesStart.size(); i++) {
-            busyTimesStart[i] *= 3600;
-            busyTimesEnd[i] *= 3600;
-        }
+        preprocessBusyTimes(busyTimesStart, busyTimesEnd);
+        // for (int i = 0; i < busyTimesStart.size(); i++) {
+        //     busyTimesStart[i] *= 3600;
+        //     busyTimesEnd[i] *= 3600;
+        // }
     
         // If no upgrade path is provided, generate a random inital path with one upgrade per hour
         if (upgradePath.empty()) {          
@@ -813,8 +850,8 @@
         }
     
         // Create working copies of levels and resources
-        vector<int> simulationLevels(currentLevels), levelsCopy(currentLevels);
-        vector<double> simulationResources(resourceCounts);
+        std::array<int,21> simulationLevels(currentLevels), levelsCopy(currentLevels);
+        std::array<double, 10> simulationResources = resourceCounts;
     
         // Remove already bought upgrades from the upgrade path if a pruned path isn't provided from the start.
         if (isFullPath) {
@@ -853,10 +890,10 @@
         printVector(upgradePath);
     
         cout << "Final Resource Counts: ";
-        printVector(simulationResources);
+        printArray(simulationResources);
     
         cout << "Final Upgrade Levels: ";
-        printVector(simulationLevels);
+        printArray(simulationLevels);
     
         // Display final rewards
         cout << "Event Currency: " << simulationResources[9] << endl;
