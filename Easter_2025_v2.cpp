@@ -16,6 +16,7 @@
     #include <numeric>
     #include <algorithm>
     #include <ctime> 
+    #include <array>
     using namespace std;
     typedef long long ll;
     
@@ -96,11 +97,11 @@
     //------------------------------------------------------------------
     
     // Define resource names (in same order as in game)
-    const vector<string> resourceNames = {"Red", "White", "Blue", "Green", "Colorful", "Yellow", "GROWTH", "FREE_EXP", "PET_STONES", "EVENT_CURRENCY"};
+    constexpr std::array<const char*, 10> resourceNames = {"Red", "White", "Blue", "Green", "Colorful", "Yellow", "GROWTH", "FREE_EXP", "PET_STONES", "EVENT_CURRENCY"};
     
-    const double INFINITY_VALUE = (1e100);
-    const int NUM_RESOURCES = resourceNames.size();
-    const int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
+    constexpr double INFINITY_VALUE = (1e100);
+    constexpr int NUM_RESOURCES = resourceNames.size();
+    constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
     
     /*
     Resource indices:
@@ -133,14 +134,28 @@
       * @return Time needed to purchase the upgrade
       */
 
-    double additionalTimeNeeded(const vector<double>& startTimes, const vector<double>& endTimes, double expectedTime) {
-        auto it = std::lower_bound(startTimes.begin(), startTimes.end(), expectedTime);
-        size_t idx = it - startTimes.begin();
-        if (idx < startTimes.size() && expectedTime >= startTimes[idx] && expectedTime <= endTimes[idx])
-            return endTimes[idx] - expectedTime;
-        if (idx > 0 && expectedTime >= startTimes[idx - 1] && expectedTime <= endTimes[idx - 1])
-            return endTimes[idx - 1] - expectedTime;
-        return 0.0;
+    std::array<double, TOTAL_SECONDS> timeNeededSeconds{};
+    
+    // Convert busy times from hours to seconds and build a lookup table for blazing fast speeds
+    void preprocessBusyTimes(const std::vector<double>& startHours, const std::vector<double>& endHours) {
+        // Mark busy seconds
+        for (size_t i = 0; i < startHours.size(); ++i) {
+            int startSec = static_cast<int>(startHours[i] * 3600.0);
+            int endSec = static_cast<int>(endHours[i] * 3600.0);
+            startSec = min(startSec, TOTAL_SECONDS - 1);
+            endSec = min(endSec, TOTAL_SECONDS - 1);
+    
+            for (int s = startSec; s <= endSec; ++s) {
+                timeNeededSeconds[s] = endSec - s;
+            }
+        }
+    }
+    
+    // Check if the given time (in seconds) is within a busy period, and how much longer it will remain busy
+    inline double additionalTimeNeeded(double expectedTimeSeconds) {
+        int idx = static_cast<int>(expectedTimeSeconds);
+        if (idx >= TOTAL_SECONDS) return 0.0;
+        return timeNeededSeconds[idx];
     }
 
     /**
@@ -293,7 +308,7 @@
         }
     
         // Check if the user can purchase the upgrade at the specified time; given their schedule
-        timeNeeded += additionalTimeNeeded(busyTimesStart, busyTimesEnd, timeElapsed + timeNeeded);
+        timeNeeded += additionalTimeNeeded(timeElapsed + timeNeeded);
         
         // Check if we have enough time left
         if (timeNeeded >= remainingTime || upgradeType == (2 * NUM_RESOURCES)) {
@@ -787,16 +802,13 @@
 
         // Initialize upgrade names
         for (int i = 0; i < NUM_RESOURCES; i++) {
-            upgradeNames[i] = resourceNames[i] + "_Level";
-            upgradeNames[i + NUM_RESOURCES] = resourceNames[i] + "_Speed";
+            upgradeNames[i] = std::string(resourceNames[i]) + "_Level";
+            upgradeNames[i + NUM_RESOURCES] = std::string(resourceNames[i]) + "_Speed";
         }
         upgradeNames[20] = "Complete";
     
         // Convert busy times to seconds
-        for (int i = 0; i < busyTimesStart.size(); i++) {
-            busyTimesStart[i] *= 3600;
-            busyTimesEnd[i] *= 3600;
-        }
+        preprocessBusyTimes(busyTimesStart, busyTimesEnd);
     
         // If no upgrade path is provided, generate a random inital path with one upgrade per hour
         if (upgradePath.empty()) {          
