@@ -402,3 +402,6 @@ FodyWeavers.xsd
 /.vscode
 /build
 Easter_2025_v2.exe
+Testing.cpp
+Testing.exe
+OptimizedPaths.txt

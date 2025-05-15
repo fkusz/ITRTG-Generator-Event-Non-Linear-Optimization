@@ -7,6 +7,7 @@
     // cleaned up some extremely minor inefficiencies; added some output clarity
 
     #include <iostream>
+    #include <fstream>
     #include <vector>
     #include <string>
     #include <map>
@@ -73,7 +74,7 @@
     vector<int> upgradePath = {};
     
     // Configuration flags
-    bool isFullPath = true;        // If true, treat upgradePath as complete; if false, treat as output from simulator
+    bool isFullPath = false;        // If true, treat upgradePath as complete; if false, treat as output from simulator
     bool allowSpeedUpgrades = true; // If true, speed upgrades can be added/removed during optimization
     bool runOptimization = true;   // If true, run optimization algorithm to improve the path
     
@@ -125,6 +126,8 @@
     bool allInsertsWorse = false;
     bool allRemovesWorse = false;
     bool allSwapsWorse = false;
+    bool allTrimsWorse = false;
+    bool allRotationsWorse = false;
     
     /**
       * Calculates additional time for the upgrade to be purchased if the user is busy at the expected upgrade time
@@ -136,7 +139,7 @@
 
     std::array<double, TOTAL_SECONDS> timeNeededSeconds{};
     
-    // Convert busy times from hours to seconds and build a lookup table for blazing fast speeds
+    //Convert busy times from hours to seconds and build a lookup table
     void preprocessBusyTimes(const std::vector<double>& startHours, const std::vector<double>& endHours) {
         // Mark busy seconds
         for (size_t i = 0; i < startHours.size(); ++i) {
@@ -283,16 +286,16 @@
         }
         
         // Calculate current production rates
-        productionRates[0] = levels[0] * cycleTimeMultiplier[0] * speedMultipliers[min(levels[10], 10)]; // A loop is deliberately omitted here for efficiency.
-        productionRates[1] = levels[1] * cycleTimeMultiplier[1] * speedMultipliers[min(levels[11], 10)]; // Short loops with regular array indexing are slower than writing out each case.
-        productionRates[2] = levels[2] * cycleTimeMultiplier[2] * speedMultipliers[min(levels[12], 10)];
-        productionRates[3] = levels[3] * cycleTimeMultiplier[3] * speedMultipliers[min(levels[13], 10)];
-        productionRates[4] = levels[4] * cycleTimeMultiplier[4] * speedMultipliers[min(levels[14], 10)];
-        productionRates[5] = levels[5] * cycleTimeMultiplier[5] * speedMultipliers[min(levels[15], 10)];
-        productionRates[6] = levels[6] * cycleTimeMultiplier[6] * speedMultipliers[min(levels[16], 10)];
-        productionRates[7] = levels[7] * cycleTimeMultiplier[7] * speedMultipliers[min(levels[17], 10)];
-        productionRates[8] = levels[8] * cycleTimeMultiplier[8] * speedMultipliers[min(levels[18], 10)];
-        productionRates[9] = levels[9] * cycleTimeMultiplier[9] * speedMultipliers[min(levels[19], 10)];
+        productionRates[0] = levels[0] * cycleTimeMultiplier[0] * speedMultipliers[levels[10]]; // A loop is deliberately omitted here for efficiency.
+        productionRates[1] = levels[1] * cycleTimeMultiplier[1] * speedMultipliers[levels[11]]; // Short loops are computationlly slower than writing out each case.
+        productionRates[2] = levels[2] * cycleTimeMultiplier[2] * speedMultipliers[levels[12]];
+        productionRates[3] = levels[3] * cycleTimeMultiplier[3] * speedMultipliers[levels[13]];
+        productionRates[4] = levels[4] * cycleTimeMultiplier[4] * speedMultipliers[levels[14]];
+        productionRates[5] = levels[5] * cycleTimeMultiplier[5] * speedMultipliers[levels[15]];
+        productionRates[6] = levels[6] * cycleTimeMultiplier[6] * speedMultipliers[levels[16]];
+        productionRates[7] = levels[7] * cycleTimeMultiplier[7] * speedMultipliers[levels[17]];
+        productionRates[8] = levels[8] * cycleTimeMultiplier[8] * speedMultipliers[levels[18]];
+        productionRates[9] = levels[9] * cycleTimeMultiplier[9] * speedMultipliers[levels[19]];
         
         // Calculate time needed for the upgrade
         double timeNeeded = 0;
@@ -308,13 +311,17 @@
         }
     
         // Check if the user can purchase the upgrade at the specified time; given their schedule
-        timeNeeded += additionalTimeNeeded(timeElapsed + timeNeeded);
-        
+        int busyLookupIndex = static_cast<int>(timeElapsed + timeNeeded);
+        // timeNeeded += additionalTimeNeeded(timeElapsed + timeNeeded);
+        if (busyLookupIndex < TOTAL_SECONDS){
+            timeNeeded += timeNeededSeconds[busyLookupIndex];
+        };
+
         // Check if we have enough time left
         if (timeNeeded >= remainingTime || upgradeType == (2 * NUM_RESOURCES)) {
             timeNeeded = remainingTime;
             resources[0] += productionRates[0] * timeNeeded; // A loop is deliberately omitted here for efficiency.
-            resources[1] += productionRates[1] * timeNeeded; // Short loops with regular array indexing is slower than writing out each case.
+            resources[1] += productionRates[1] * timeNeeded; // Short loops are computationlly slower than writing out each case.
             resources[2] += productionRates[2] * timeNeeded;
             resources[3] += productionRates[3] * timeNeeded;
             resources[4] += productionRates[4] * timeNeeded;
@@ -413,16 +420,16 @@
      * Print a vector to console
      */
     template <typename T>
-    void printVector(vector<T>& x) {
-        for (auto item : x) cout << item << ",";
-        cout << endl;
+    void printVector(vector<T>& x, std::ostream& out = std::cout) {
+        for (auto item : x) out << item << ",";
+        out << endl;
     }
 
     bool tryInsertUpgrade(vector<int>& upgradePath, double& finalScore, 
         const vector<double>& resourceCounts, const vector<int>& currentLevels,
         mt19937& randomEngine, bool allowSpeedUpgrades, bool verbose = false) {
 
-        int pathLength = upgradePath.size() - 1;
+        int pathLength = upgradePath.size();
         static vector<int> candidatePath;
         candidatePath = upgradePath;
         static vector<double> testResources;
@@ -432,15 +439,18 @@
         uniform_int_distribution<> positionDist(0, pathLength);
         int insertPosition = positionDist(randomEngine);
 
-        for (int i2 = 0; i2 < pathLength - 1; i2++) {
+        for (int i2 = 0; i2 < pathLength; i2++) {
             candidatePath = upgradePath;
-            int i = (i2 + insertPosition) % (pathLength - 1);
+            int i = (i2 + insertPosition) % (pathLength);
             // Try inserting each possible upgrade type
             candidatePath.insert(candidatePath.begin() + i, 0);
 
-            // Test each upgrade type
+            // Test each upgrade type starting with a random one
+            int startingUpgradeType = randomEngine() % (allowSpeedUpgrades ? NUM_RESOURCES * 2 : NUM_RESOURCES);
             int maxTypes = (allowSpeedUpgrades ? NUM_RESOURCES * 2 : NUM_RESOURCES);
             for (int upgradeType = 0; upgradeType < maxTypes; upgradeType++) {
+
+                upgradeType = (upgradeType + startingUpgradeType) % maxTypes;
                 candidatePath[i] = upgradeType;
 
                 testResources = resourceCounts;
@@ -462,16 +472,58 @@
             }
         }
 
-        if(verbose){
-            cout << "No available inserts" << endl;
-        }
-
+        //cout << "No available inserts" << endl;
         allInsertsWorse = true;
         return false;
     }
 
-    // Helper function to try removing an upgrade and return if improvement was made
     bool tryRemoveUpgrade(vector<int>& upgradePath, double& finalScore, 
+        const vector<double>& resourceCounts, const vector<int>& currentLevels,
+        mt19937& randomEngine, bool allowSpeedUpgrades, bool verbose = false) {
+
+        int pathLength = upgradePath.size() - 1;
+        static vector<int> candidatePath;
+        candidatePath = upgradePath;
+        
+        static vector<double> testResources;
+        static vector<int> testLevels;
+
+        uniform_int_distribution<> swapDist(0, pathLength - 2);
+        int startPos = swapDist(randomEngine);
+
+        for (int i = 0; i < pathLength; i++) {
+            int removePos = (i + startPos) % (pathLength);
+
+            if (!allowSpeedUpgrades && upgradePath[removePos] >= NUM_RESOURCES) continue;
+
+            candidatePath = upgradePath;
+            candidatePath.erase(candidatePath.begin() + removePos);
+            testResources = resourceCounts;
+            testLevels = currentLevels;
+
+            simulateUpgradePath(candidatePath, testLevels, testResources, TOTAL_SECONDS);
+            double testScore = calculateScore(testResources);
+
+            if (testScore >= finalScore) {
+                finalScore = testScore;
+                upgradePath = candidatePath;
+
+                if (verbose) {
+                    cout << "Improved path (remove): ";
+                    printVector(upgradePath);
+                    cout << "New score: " << finalScore << endl;
+                }
+                return true;
+            }
+        }
+
+        //cout << "No available removes" << endl;
+        allRemovesWorse = true;
+        return false;
+
+    }
+    // Helper function to try removing an upgrade and return if improvement was made
+    bool tryTrimPath(vector<int>& upgradePath, double& finalScore, 
         const vector<double>& resourceCounts, const vector<int>& currentLevels,
         mt19937& randomEngine, bool allowSpeedUpgrades, bool verbose = false) {
 
@@ -518,17 +570,15 @@
             finalScore = bestNewScore;
 
             if (verbose) {
-                cout << "Improved path (remove): ";
+                cout << "Improved path (trim): ";
                 printVector(upgradePath);
                 cout << "New score: " << finalScore << endl;
             }
 
             return true;
         }
-        if(verbose){
-            cout << "No available removes" << endl;
-        }
-        allRemovesWorse = true;
+        //cout << "No available trims" << endl;
+        allTrimsWorse = true;
         return false;
     }
 
@@ -549,9 +599,9 @@
         uniform_int_distribution<> swapDist(0, pathLength - 2);
         int startPos = swapDist(randomEngine);
 
-        // Try various swap combinations
+        // Try all swap combinations
         for (int i2 = 0; i2 < pathLength - 1; i2++) { 
-            for (int j2 = i2 + 1; j2 < pathLength - 1; j2++) {  // Consider nearby swaps first
+            for (int j2 = i2 + 1; j2 < pathLength - 1; j2++) { 
                 int i = (i2 + startPos) % (pathLength - 1);
                 int j = (j2 + startPos) % (pathLength - 1);
 
@@ -584,10 +634,71 @@
                 swap(candidatePath[i], candidatePath[j]);
             }
         }
-        if(verbose){
-            cout << "No available swaps" << endl;
-        }
+        //cout << "No available swaps" << endl;
         allSwapsWorse = true;
+        return false;
+    }
+
+    bool exhaustRotateSubsequences(vector<int>& upgradePath, double& finalScore, 
+        const vector<double>& resourceCounts, const vector<int>& currentLevels,
+        mt19937& randomEngine, bool allowSpeedUpgrades, bool verbose = false) {
+
+        int pathLength = upgradePath.size() - 1;
+        int maxIndex = pathLength - 1;
+        static vector<int> candidatePath;
+        double newScore = finalScore;
+
+        static vector<double> testResources;
+        static vector<int> testLevels;
+
+        uniform_int_distribution<> rotateDist(0, maxIndex - 2); // A maximum of three less than the final index of the path (Final index is end-marker, which shouldn't be rotated)
+
+        // Determine initial start and end of a subsequence.
+        int i = rotateDist(randomEngine);
+        int hahahJustChecking = 0;
+
+        for (int i2 = 0; i2 < maxIndex - 1; i2++){
+            int i3 = (i + i2) % (maxIndex - 1);
+            uniform_int_distribution<> rotateDist2(0, maxIndex-i3); 
+            int j = rotateDist2(randomEngine);
+            for (int j2 = 0; j2 < maxIndex - i3 - 1; j2++){ 
+                int j3 = i3 + 2 + ((j + j2) % (maxIndex - i3 - 1));
+                // Perform all possible rotations of the subsequence. ~1-8 left or ~1-8 right rotations most commonly yield improvements, so we alternate between them before trying longer ones.
+                for (int k = 0; k < j3-i3; k++) {
+                    candidatePath = upgradePath;
+                    hahahJustChecking++;
+
+                    int offset = (k + 2) / 2; // 1,1,2,2,3,3,...
+                    bool isLeft = (k % 2 == 0); // true, false, true, false,...
+
+                    if(isLeft)  rotate(candidatePath.begin() + i3, candidatePath.begin() + i3 + offset, candidatePath.begin() + j3 + 1); // Left rotation
+                    else        rotate(candidatePath.begin() + i3, candidatePath.begin() + j3 - offset + 1, candidatePath.begin() + j3 + 1); // Right rotation
+
+                    testResources = resourceCounts;
+                    testLevels = currentLevels;
+
+                    simulateUpgradePath(candidatePath, testLevels, testResources, TOTAL_SECONDS);
+                    newScore = calculateScore(testResources);
+
+                    if (newScore > finalScore) {
+                        upgradePath = candidatePath;
+                        finalScore = newScore;
+
+                        if (verbose) {
+                            cout << "Improved path (rotation): ";
+                            printVector(upgradePath);
+                            cout << "New score: " << finalScore << endl;
+                        }
+
+                        return true;
+                    }
+                }
+
+            }
+        }
+        allRotationsWorse = true;
+        cout << "Tried: " << hahahJustChecking << " rotations" << endl;
+        cout << "Path Length: " << pathLength << endl;
         return false;
     }
 
@@ -597,28 +708,29 @@
         mt19937& randomEngine, bool allowSpeedUpgrades, bool verbose = false) {
 
         int pathLength = upgradePath.size() - 1;
+        if (pathLength < 5) return false;
         static vector<int> candidatePath;
         double newScore = finalScore;
 
         static vector<double> testResources;
         static vector<int> testLevels;
 
-        uniform_int_distribution<> rotateDist(0, pathLength - 4); // A maximum of three less than the final index of the path (Final index is end-marker, which shouldn't be rotated)
+        uniform_int_distribution<> rotateDist(0, pathLength - 3); // A maximum of three less than the final index of the path (Final index is end-marker, which shouldn't be rotated)
 
         // Determine start and end of a subsequence.
         int i = rotateDist(randomEngine);
-        uniform_int_distribution<> rotateDist2(i+2, pathLength - 2); // Ensure the subsequence is AT LEAST THREE. Two would be a swap, which we already have a function for.
+        uniform_int_distribution<> rotateDist2(i+2, pathLength - 1); // Ensure the subsequence is AT LEAST THREE. Two would be a swap, which we already have a function for.
         int j = rotateDist2(randomEngine);
 
         // Perform all possible rotations of the subsequence. ~1-8 left or ~1-8 right rotations most commonly yield improvements, so we alternate between them before trying longer ones.
         for (int k = 0; k < j-i; k++) {
             candidatePath = upgradePath;
 
-            int offset = (k + 1) / 2; // 1,1,2,2,3,3,...
-            bool isLeft = (k % 2 == 1); // true, false, true, false,...
+            int offset = (k + 2) / 2; // 1,1,2,2,3,3,...
+            bool isLeft = (k % 2 == 0); // true, false, true, false,...
 
-            if(isLeft)  rotate(candidatePath.begin() + i, candidatePath.begin() + i + offset, candidatePath.begin() + j); // Left rotation
-            else        rotate(candidatePath.begin() + i, candidatePath.begin() + j - offset, candidatePath.begin() + j); // Right rotation
+            if(isLeft)  rotate(candidatePath.begin() + i, candidatePath.begin() + i + offset, candidatePath.begin() + j + 1); // Left rotation
+            else        rotate(candidatePath.begin() + i, candidatePath.begin() + j - offset + 1, candidatePath.begin() + j + 1); // Right rotation
 
             testResources = resourceCounts;
             testLevels = currentLevels;
@@ -639,9 +751,6 @@
                 return true;
             }
         }
-
-        // Reset rotation if no improvement
-        candidatePath = upgradePath;
 
         return false;
     }
@@ -669,8 +778,12 @@
             // Modular approach based on iteration count - tune these percentages based on effectiveness
             int strategy = iterationCount % 100;
 
-            if (allInsertsWorse && allRemovesWorse && allSwapsWorse) {
-                improved = tryRotateSubsequences(upgradePath, finalScore, resourceCounts, currentLevels, 
+            if(allRotationsWorse){
+                noImprovementStreak = maxIterations;
+            }
+            else if (allInsertsWorse && allRemovesWorse && allSwapsWorse && allTrimsWorse) {
+                outputCount = outputInterval; // Always display results from exhaustive searches
+                improved = exhaustRotateSubsequences(upgradePath, finalScore, resourceCounts, currentLevels, 
                                             randomEngine, allowSpeedUpgrades, outputCount >= outputInterval);
             }
             else if (strategy < 15 && !allInsertsWorse) {
@@ -683,13 +796,18 @@
                 improved = tryRemoveUpgrade(upgradePath, finalScore, resourceCounts, currentLevels, 
                                             randomEngine, allowSpeedUpgrades, outputCount >= outputInterval);
             }
-            else if (strategy < 31) {
+            else if (strategy < 31 && !allTrimsWorse) {
                 // Rotate strategy (1% of normal iterations)
+                improved = tryTrimPath(upgradePath, finalScore, resourceCounts, currentLevels, 
+                                            randomEngine, allowSpeedUpgrades, outputCount >= outputInterval);
+            }
+            else if (strategy < 32) {
+                // Trim strategy (1% of normal iterations)
                 improved = tryRotateSubsequences(upgradePath, finalScore, resourceCounts, currentLevels, 
                                             randomEngine, allowSpeedUpgrades, outputCount >= outputInterval);
             }
             else if (!allSwapsWorse){
-                // Swap strategy (63% of iterations - most common)
+                // Swap strategy (68% of iterations - most common)
                 improved = trySwapUpgrades(upgradePath, finalScore, resourceCounts, currentLevels, 
                                             randomEngine, allowSpeedUpgrades, outputCount >= outputInterval);
             }
@@ -698,6 +816,8 @@
                 allInsertsWorse = false;
                 allRemovesWorse = false;
                 allSwapsWorse = false;
+                allTrimsWorse = false;
+                allRotationsWorse = false;
 
                 // Reset output counter if we showed an update
                 if (outputCount >= outputInterval) {
@@ -709,19 +829,21 @@
                 noImprovementStreak++;
             }
             // Perform extra rotations when stuck in local optimum
-            if (noImprovementStreak % 10000 == 0 && !skipAuxPath) {
+            if (noImprovementStreak >= maxIterations && !skipAuxPath) {
                 cout << "Exhaustive attempts to improve the path have failed. This is likely your best path:" << endl;
                 printVector(upgradePath);
                 cout << "Final score: " << finalScore << endl;
                 cout << "The program will now silently try to find a better path by starting over from scratch." << endl;
                 cout << "If using an online compiler, note that this auxiliary search will not finish due to time constraints." << endl;
-                bool escaped = tryNewPath(upgradePath, resourceCounts, currentLevels, finalScore);
+                improved =  false; //tryNewPath(upgradePath, resourceCounts, currentLevels, finalScore);
 
-                if (escaped) {
+                if (improved) {
                     noImprovementStreak = 0;
                     allInsertsWorse = false;
                     allRemovesWorse = false;
                     allSwapsWorse = false;
+                    allTrimsWorse = false;
+                    allRotationsWorse = false;
                 }
             }
         }
@@ -809,98 +931,109 @@
     
         // Convert busy times to seconds
         preprocessBusyTimes(busyTimesStart, busyTimesEnd);
-    
-        // If no upgrade path is provided, generate a random inital path with one upgrade per hour
-        if (upgradePath.empty()) {          
-            for (int i = 0; i < TOTAL_SECONDS/10800; i++) {
-                upgradePath.push_back(rand() % 3 + 10 * (rand() % 2));
+        ofstream MyFile;
+        MyFile.open("OptimizedPaths.txt", ios::app);
+        while (true) {
+
+            // If no upgrade path is provided, generate a random inital path with one upgrade per hour
+            if (upgradePath.empty()) {          
+                for (int i = 0; i < TOTAL_SECONDS/10800; i++) {
+                    upgradePath.push_back(rand() % 3 + 10 * (rand() % 2));
+                }
+                for (int i = 0; i < TOTAL_SECONDS/10800; i++) {
+                    upgradePath.push_back(rand() % 3 + 10 * (rand() % 2) + 3);
+                }
+                for (int i = 0; i < TOTAL_SECONDS/10800; i++) {
+                    upgradePath.push_back(rand() % 4 + 10 * (rand() % 2) + 6);
+                }
+                upgradePath.push_back(NUM_RESOURCES * 2);
             }
-            for (int i = 0; i < TOTAL_SECONDS/10800; i++) {
-                upgradePath.push_back(rand() % 3 + 10 * (rand() % 2) + 3);
+        
+            // Create working copies of levels and resources
+            vector<int> simulationLevels(currentLevels), levelsCopy(currentLevels);
+            vector<double> simulationResources(resourceCounts);
+        
+            // Remove already bought upgrades from the upgrade path if a pruned path isn't provided from the start.
+            if (isFullPath) {
+                levelsCopy[1]--; // Adjust first level
+                auto it = upgradePath.begin();
+                while (it != upgradePath.end()) {
+                    if (levelsCopy[*it] > 0) {
+                        // Remove already completed upgrades
+                        levelsCopy[*it]--;
+                        it = upgradePath.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
             }
-            for (int i = 0; i < TOTAL_SECONDS/10800; i++) {
-                upgradePath.push_back(rand() % 4 + 10 * (rand() % 2) + 6);
-            }
-            upgradePath.push_back(NUM_RESOURCES * 2);
-        }
-    
-        // Create working copies of levels and resources
-        vector<int> simulationLevels(currentLevels), levelsCopy(currentLevels);
-        vector<double> simulationResources(resourceCounts);
-    
-        // Remove already bought upgrades from the upgrade path if a pruned path isn't provided from the start.
-        if (isFullPath) {
-            levelsCopy[1]--; // Adjust first level
+
+            // Remove speed upgrades with already maxed Levels that may be leftover in the path
             auto it = upgradePath.begin();
             while (it != upgradePath.end()) {
-                if (levelsCopy[*it] > 0) {
-                    // Remove already completed upgrades
-                    levelsCopy[*it]--;
+                if (*it >= NUM_RESOURCES && levelsCopy[*it] == 10) {
                     it = upgradePath.erase(it);
                 } else {
                     ++it;
                 }
             }
-        }
-
-        // Remove speed upgrades with already maxed Levels that may be leftover in the path
-        auto it = upgradePath.begin();
-        while (it != upgradePath.end()) {
-            if (*it >= NUM_RESOURCES && levelsCopy[*it] == 10) {
-                it = upgradePath.erase(it);
-            } else {
-                ++it;
+        
+            // Initialize random number generator
+            random_device seed;
+            mt19937 randomEngine(seed());
+        
+            // Run initial simulation with current upgrade path
+            double remainingTime = simulateUpgradePath(upgradePath, simulationLevels, simulationResources, TOTAL_SECONDS, false);
+        
+            // Print results
+            cout << "Upgrade Path: ";
+            printVector(upgradePath);
+        
+            cout << "Final Resource Counts: ";
+            printVector(simulationResources);
+        
+            cout << "Final Upgrade Levels: ";
+            printVector(simulationLevels);
+        
+            // Display final rewards
+            cout << "Event Currency: " << simulationResources[9] << endl;
+            cout << "Free Exp (" << DLs << " DLs): " 
+                << simulationResources[7] * (500.0 + DLs) / 5.0 
+                << " (" << simulationResources[7] << " levels * cycles)" << endl;
+            cout << "Pet Stones: " << simulationResources[8] << endl;
+            cout << "Growth (" << UNLOCKED_PETS << " pets): " 
+                << simulationResources[6] * UNLOCKED_PETS / 100.0 
+                << " (" << simulationResources[6] << " levels * cycles)" << endl;
+        
+            // Calculate overall score
+            double finalScore = calculateScore(simulationResources);
+            cout << "Score: " << finalScore << endl;
+        
+            // Stop here if optimization is disabled
+            if (!runOptimization) return 0;
+        
+            //------------------------------------------------------------------
+            // OPTIMIZATION ALGORITHM
+            //------------------------------------------------------------------
+        
+            if (runOptimization) {
+                allInsertsWorse = false;
+                allRemovesWorse = false;
+                allSwapsWorse = false;
+                allTrimsWorse = false;
+                allRotationsWorse = false;
+                cout << "Starting optimization..." << endl;
+                optimizeUpgradePath(upgradePath, finalScore, resourceCounts, currentLevels, 10000, outputInterval, false);
             }
+        
+            // Final output
+            //MyFile << "Optimized upgrade path: ";
+            printVector(upgradePath);
+            cout << "Final score: " << finalScore << endl << endl;
+            upgradePath = {};
+            break;
         }
-    
-        // Initialize random number generator
-        random_device seed;
-        mt19937 randomEngine(seed());
-    
-        // Run initial simulation with current upgrade path
-        double remainingTime = simulateUpgradePath(upgradePath, simulationLevels, simulationResources, TOTAL_SECONDS, true);
-    
-        // Print results
-        cout << "Upgrade Path: ";
-        printVector(upgradePath);
-    
-        cout << "Final Resource Counts: ";
-        printVector(simulationResources);
-    
-        cout << "Final Upgrade Levels: ";
-        printVector(simulationLevels);
-    
-        // Display final rewards
-        cout << "Event Currency: " << simulationResources[9] << endl;
-        cout << "Free Exp (" << DLs << " DLs): " 
-             << simulationResources[7] * (500.0 + DLs) / 5.0 
-             << " (" << simulationResources[7] << " levels * cycles)" << endl;
-        cout << "Pet Stones: " << simulationResources[8] << endl;
-        cout << "Growth (" << UNLOCKED_PETS << " pets): " 
-             << simulationResources[6] * UNLOCKED_PETS / 100.0 
-             << " (" << simulationResources[6] << " levels * cycles)" << endl;
-    
-        // Calculate overall score
-        double finalScore = calculateScore(simulationResources);
-        cout << "Score: " << finalScore << endl;
-    
-        // Stop here if optimization is disabled
-        if (!runOptimization) return 0;
-    
-        //------------------------------------------------------------------
-        // OPTIMIZATION ALGORITHM
-        //------------------------------------------------------------------
-    
-        if (runOptimization) {
-            cout << "Starting optimization..." << endl;
-            optimizeUpgradePath(upgradePath, finalScore, resourceCounts, currentLevels, 10000, outputInterval, false);
-        }
-    
-        // Final output
-        cout << "Optimized upgrade path: ";
-        printVector(upgradePath);
-        cout << "Final score: " << finalScore << endl;
-    
+        MyFile.close();
         return 0;
     }
     
