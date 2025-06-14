@@ -58,7 +58,7 @@ vector<double> resourceCounts = {
     0,                         // Event Currency
 };
 
-int outputInterval = 100; // How often to output results during optimization. Set this to 1 if running locally; or 100 if using an online compiler
+int outputInterval = 1; // How often to output results during optimization. Set this to 1 if running locally; or 100 if using an online compiler
 
 //------------------------------------------------------------------
 // REWARD PRIORITY SETTINGS (Higher weights incentivize more of that reward by the end of the event)
@@ -71,7 +71,7 @@ const double GROWTH_WEIGHT = 8e-5;       // Priority weight for Growth
 // Initial upgrade path sequence
 // Each number represents an upgrade type (0-9 for production levels, 10-19 for speed upgrades)
 // The last element must be 20 (indicates completion)
-vector<int> upgradePath = {};
+vector<int> upgradePath = {0,1,2,3,4,5,6,7,20};
 
 // Configuration flags
 bool isFullPath = false;        // If true, treat upgradePath as complete; if false, treat as output from simulator
@@ -123,10 +123,10 @@ Resource indices:
 // Initiate map to store readable names for each upgrade type. This is populated in main()
 map<int, string> upgradeNames;
 // Create flags that indicate if a search has been ehaustive and should be skipped later
-bool allInsertsWorse = false;
-bool allRemovesWorse = false;
-bool allSwapsWorse = false;
-bool allTrimsWorse = false;
+bool allInsertsWorse = true;
+bool allRemovesWorse = true;
+bool allSwapsWorse = true;
+bool allTrimsWorse = true;
 bool allRotationsWorse = false;
 
 /**
@@ -689,6 +689,9 @@ bool exhaustRotateSubsequences(vector<int>& upgradePath, double& finalScore,
                 newScore = calculateScore(testResources);
 
                 if (newScore > finalScore) {
+                    cout << i3 << "," << j3 << "," << offset << "," << k << endl;
+                    printVector(upgradePath);
+                    printVector(candidatePath);
                     upgradePath = candidatePath;
                     finalScore = newScore;
 
@@ -790,7 +793,7 @@ void optimizeUpgradePath(vector<int>& upgradePath, double& finalScore,
         }
         else if (allInsertsWorse && allRemovesWorse && allSwapsWorse && allTrimsWorse) {
             outputCount = outputInterval; // Always display results from exhaustive searches
-            improved = tryRotateSubsequences(upgradePath, finalScore, resourceCounts, currentLevels, 
+            improved = exhaustRotateSubsequences(upgradePath, finalScore, resourceCounts, currentLevels, 
                                         randomEngine, allowSpeedUpgrades, outputCount >= outputInterval);
         }
         else if (strategy < 15 && !allInsertsWorse) {
@@ -820,10 +823,10 @@ void optimizeUpgradePath(vector<int>& upgradePath, double& finalScore,
         }
         if (improved) {
             noImprovementStreak = 0;
-            allInsertsWorse = false;
-            allRemovesWorse = false;
-            allSwapsWorse = false;
-            allTrimsWorse = false;
+            //allInsertsWorse = false;
+            //allRemovesWorse = false;
+            //allSwapsWorse = false;
+            //allTrimsWorse = false;
             allRotationsWorse = false;
 
             // Reset output counter if we showed an update
@@ -972,7 +975,7 @@ int main() {
         mt19937 randomEngine(seed());
     
         // Run initial simulation with current upgrade path
-        double remainingTime = simulateUpgradePath(upgradePath, simulationLevels, simulationResources, TOTAL_SECONDS, false);
+        double remainingTime = simulateUpgradePath(upgradePath, simulationLevels, simulationResources, TOTAL_SECONDS, true);
     
         // Print results
         cout << "Upgrade Path: ";
@@ -1006,11 +1009,6 @@ int main() {
         //------------------------------------------------------------------
     
         if (runOptimization) {
-            allInsertsWorse = false;
-            allRemovesWorse = false;
-            allSwapsWorse = false;
-            allTrimsWorse = false;
-            allRotationsWorse = false;
             cout << "Starting optimization..." << endl;
             optimizeUpgradePath(upgradePath, finalScore, resourceCounts, currentLevels, 10000, outputInterval, false);
         }
