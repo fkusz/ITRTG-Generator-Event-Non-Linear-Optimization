@@ -550,7 +550,7 @@ bool tryRotateSubsequences(OptimizationPackage& package, SearchContext& context,
         testScore = evaluatePath(candidatePath, context);
         int rotationPos = isLeft ? i + offset: j - offset + 1;
         if (testScore > package.score) {
-            if (outProposal) *outProposal = Proposal::Rotate(i, rotationPos, j + 1, testScore);
+            if (outProposal) *outProposal = Proposal::Rotate(i, j + 1, rotationPos, testScore);
             package.path = candidatePath;
             package.score = testScore;
             context.logger.logImprovement("Rotation", package.path, package.score);
@@ -787,7 +787,6 @@ vector<int> masterWorkerOptimization() {
 
     return masterPackage.path;
 }
-
 int main() {
     upgradePath.reserve(500);
     vector<int> levelsCopy(currentLevels);
