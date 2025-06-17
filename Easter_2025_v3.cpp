@@ -71,7 +71,7 @@ const bool runOptimization = true;
 
 // END USER SETTINGS ---------------------------------------------------------------------
 // ADVANCED SETTINGS ---------------------------------------------------------------------
-const int outputInterval = 100; //How often to print results (milliseconds)
+const int outputInterval = 1000; //How often to print results (milliseconds)
 const bool multithreading = false;
 
 const double EVENT_CURRENCY_WEIGHT = 100e-5; 
@@ -87,7 +87,7 @@ constexpr array<const char*, 10> resourceNames = {"Red", "White", "Blue", "Green
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
-int num_cores = 9; //thread::hardware_concurrency()/2;
+int num_cores = 16; //thread::hardware_concurrency()/2;
 
 map<int, string> upgradeNames;
 array<double, TOTAL_SECONDS> timeNeededSeconds{};
@@ -588,7 +588,7 @@ bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& cont
                 double testScore = evaluatePath(candidatePath, context);
                 int rotationPos = isLeft ? i3 + offset: j3 - offset + 1;
                 if (testScore > package.score) {
-                    if (outProposal) *outProposal = Proposal::Rotate(i3, rotationPos, j3+1, testScore);
+                    if (outProposal) *outProposal = Proposal::Rotate(i3, j3+1, rotationPos, testScore);
                     package.path = candidatePath;
                     package.score = testScore;
                     context.logger.logImprovement("Rotation", package.path, package.score);
@@ -697,7 +697,7 @@ vector<int> masterWorkerOptimization() {
     Logger masterLogger(outputInterval);
 
     // Worker thread logic
-    auto workerFunc = [&](stop_token st) {
+    auto workerFunc = [&](stop_token st, const string defaultStrategy) {
         mt19937 rng(random_device{}() ^ hash<thread::id>{}(this_thread::get_id()));
         setThreadName("WorkerThread");
         NullStream nullStream;
@@ -709,12 +709,15 @@ vector<int> masterWorkerOptimization() {
         OptimizationPackage localPackage;
         while (!st.stop_requested()) {
             bool improved = false;
+            strategy = defaultStrategy;
             uint64_t myVersion = currentVersion.load();
             {
             shared_lock packageLock(packageMutex);
             localPackage = masterPackage;
             }
-            if      (!localPackage.deadMoves.contains("Insert")) strategy = "Insert";
+
+            if (!localPackage.deadMoves.contains(strategy));
+            else if (!localPackage.deadMoves.contains("Insert")) strategy = "Insert";
             else if (!localPackage.deadMoves.contains("Swap")) strategy = "Swap";
             else if (!localPackage.deadMoves.contains("Remove")) strategy = "Remove";
             else if (!localPackage.deadMoves.contains("Rotate")) strategy = "Rotate";
@@ -747,8 +750,10 @@ vector<int> masterWorkerOptimization() {
 
     // Launch worker threads
     vector<jthread> workers;
-    for (int i = 1; i < num_cores; ++i) {
-        workers.emplace_back(workerFunc);
+    vector<string> strategies = {"Insert", "Remove", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Rotate"};
+    for (int i = 0; i < num_cores - 1; ++i) {
+        string preferredStrategy = strategies[i];
+        workers.emplace_back([&, preferredStrategy](stop_token st) {workerFunc(st, preferredStrategy);});
     }
 
     while (true) {
