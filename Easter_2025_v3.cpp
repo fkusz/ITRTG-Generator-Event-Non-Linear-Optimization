@@ -12,7 +12,7 @@
 // (WIP) add parallelization for a isngle solution to produce a near-instant single solution
 // (WIP) rare bug where the score can become unbounded and skyrocket
 
-#include <windows.h>
+//#include <windows.h>
 #include <iostream>
 #include <chrono>
 #include <fstream>
@@ -235,12 +235,12 @@ void readoutUpgrade(int upgradeType, vector<int>& levels, int elapsedSeconds) {
         << (int)elapsedSeconds/3600%24 << " hours, " 
         << (int)elapsedSeconds/60%60 << " minutes" << "\n";
 }
-void setThreadName(const std::string& name) {
-    HRESULT hr = SetThreadDescription(GetCurrentThread(), std::wstring(name.begin(), name.end()).c_str());
-    if (FAILED(hr)) {
-        std::cerr << "Failed to set thread name: " << std::hex << hr << "\n";
-    }
-}
+// void setThreadName(const std::string& name) {
+//     HRESULT hr = SetThreadDescription(GetCurrentThread(), std::wstring(name.begin(), name.end()).c_str());
+//     if (FAILED(hr)) {
+//         std::cerr << "Failed to set thread name: " << std::hex << hr << "\n";
+//     }
+// }
 // END UTILITY FUNCTIONS ----------------------------------------------------------------
 // ALGORITHM FUNCTIONS ------------------------------------------------------------------
 double performUpgrade(vector<int>& levels, vector<double>& resources, int upgradeType, double& remainingTime) {
@@ -693,13 +693,13 @@ vector<int> masterWorkerOptimization() {
     masterPath.reserve(500);
     masterPath = generateRandomPath();
     OptimizationPackage masterPackage = {masterPath, 0, mt19937(random_device{}())};
-    setThreadName("Master");
+    //setThreadName("Master");
     Logger masterLogger(outputInterval);
 
     // Worker thread logic
     auto workerFunc = [&](stop_token st, const string defaultStrategy) {
         mt19937 rng(random_device{}() ^ hash<thread::id>{}(this_thread::get_id()));
-        setThreadName("WorkerThread");
+        //setThreadName("WorkerThread");
         NullStream nullStream;
         Logger noopLogger(0, nullStream);
         SearchContext context(noopLogger, resourceCounts, currentLevels);
