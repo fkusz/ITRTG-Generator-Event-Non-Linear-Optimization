@@ -12,6 +12,7 @@
 // (WIP) add parallelization for a isngle solution to produce a near-instant single solution
 // (WIP) rare bug where the score can become unbounded and skyrocket
 
+//#include <windows.h>
 #include <iostream>
 #include <chrono>
 #include <fstream>
@@ -22,7 +23,11 @@
 #include <random> 
 #include <array>
 #include <stop_token>
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include <unordered_set>
+#include <shared_mutex>
 using namespace std;
 typedef long long ll;
 
@@ -67,6 +72,7 @@ const bool runOptimization = true;
 // END USER SETTINGS ---------------------------------------------------------------------
 // ADVANCED SETTINGS ---------------------------------------------------------------------
 const int outputInterval = 1000; //How often results may be printed (milliseconds)
+const bool multithreading = false; // If true, run on multiple CPU cores. (Probably not worth it yet)
 
 const double EVENT_CURRENCY_WEIGHT = 100e-5; 
 const double FREE_EXP_WEIGHT = 6e-5;     
@@ -81,6 +87,7 @@ constexpr array<const char*, 10> resourceNames = {"Chair", "Bucket", "Goggles", 
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
+int num_cores = thread::hardware_concurrency()/2;
 
 map<int, string> upgradeNames;
 array<double, TOTAL_SECONDS> timeNeededSeconds{};
@@ -228,6 +235,12 @@ void readoutUpgrade(int upgradeType, vector<int>& levels, int elapsedSeconds) {
         << (int)elapsedSeconds/3600%24 << " hours, " 
         << (int)elapsedSeconds/60%60 << " minutes" << "\n";
 }
+// void setThreadName(const std::string& name) {
+//     HRESULT hr = SetThreadDescription(GetCurrentThread(), std::wstring(name.begin(), name.end()).c_str());
+//     if (FAILED(hr)) {
+//         std::cerr << "Failed to set thread name: " << std::hex << hr << "\n";
+//     }
+// }
 // END UTILITY FUNCTIONS ----------------------------------------------------------------
 // ALGORITHM FUNCTIONS ------------------------------------------------------------------
 double performUpgrade(vector<int>& levels, vector<double>& resources, int upgradeType, double& remainingTime) {
@@ -603,15 +616,15 @@ void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, c
 
         int strategy = iterationCount % 100;
 
-        if(package.deadMoves.count("Rotation")){
+        if(package.deadMoves.contains("Rotation")){
             break;
         }
-        else if (package.deadMoves.count("Insert") && package.deadMoves.count("Remove") && package.deadMoves.count("Swap"))
+        else if (package.deadMoves.contains("Insert") && package.deadMoves.contains("Remove") && package.deadMoves.contains("Swap"))
                                                                             {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
-        else if (strategy < 15 && !package.deadMoves.count("Insert"))    {improved = tryInsertUpgrade(package, context); if (improved) InsertCount++;}
-        else if (strategy < 30 && !package.deadMoves.count("Remove"))    {improved = tryRemoveUpgrade(package, context); if (improved) RemoveCount++;}
+        else if (strategy < 15 && !package.deadMoves.contains("Insert"))    {improved = tryInsertUpgrade(package, context); if (improved) InsertCount++;}
+        else if (strategy < 30 && !package.deadMoves.contains("Remove"))    {improved = tryRemoveUpgrade(package, context); if (improved) RemoveCount++;}
         else if (strategy < 32)                                             {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
-        else if (!package.deadMoves.count("Swap"))                       {improved = trySwapUpgrades(package, context); if (improved) SwapCount++;}
+        else if (!package.deadMoves.contains("Swap"))                       {improved = trySwapUpgrades(package, context); if (improved) SwapCount++;}
         
         if (improved) {
             noImprovementStreak = 0;
@@ -634,7 +647,146 @@ void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, c
     // cout << "Swap ratio: " << SwapRatio << "\n";
     // cout << "Rotation ratio: " << RotationRatio << "\n";
 }
+vector<int> parallelOptimization() {
+    random_device rd;
+    vector<thread> threads;
+    vector<OptimizationPackage> results(num_cores);
 
+    cout << "Starting optimization on " << num_cores << " independent paths..." << "\n";
+
+    for (int i = 0; i < num_cores; ++i) {
+        threads.emplace_back([&, i]() {
+            vector<int> threadPath;
+            threadPath.reserve(500);
+            threadPath = generateRandomPath();
+            mt19937 threadRandomEngine(rd() ^ (hash<thread::id>{}(this_thread::get_id()) + i));
+            Logger threadLogger(outputInterval);
+            SearchContext threadContext{threadLogger, resourceCounts, currentLevels};
+            OptimizationPackage threadPackage = {move(threadPath), 0, move(threadRandomEngine)};
+            optimizeUpgradePath(threadPackage, threadContext);
+            results[i] = move(threadPackage);
+        });
+    }
+
+    for (auto& t : threads) {
+        t.join();
+    }
+    for (auto& t : results) {
+        cout << "Thread score: " << t.score << "\n";
+    }
+
+    // Pick the best result
+    auto bestResult = max_element(results.begin(), results.end(), [](const auto& a, const auto& b) {
+        return a.score < b.score;
+    });
+
+    return bestResult->path;
+}
+vector<int> masterWorkerOptimization() {
+    mutex proposalMutex;
+    mutex deadMoveMutex;
+    shared_mutex packageMutex;
+    atomic<uint64_t> currentVersion = 0; 
+    optional<Proposal> sharedProposal;
+    optional<string> sharedDeadMove;
+    vector<int> masterPath;
+    masterPath.reserve(500);
+    masterPath = generateRandomPath();
+    OptimizationPackage masterPackage = {masterPath, 0, mt19937(random_device{}())};
+    //setThreadName("Master");
+    Logger masterLogger(outputInterval);
+
+    // Worker thread logic
+    auto workerFunc = [&](stop_token st, const string defaultStrategy) {
+        mt19937 rng(random_device{}() ^ hash<thread::id>{}(this_thread::get_id()));
+        //setThreadName("WorkerThread");
+        NullStream nullStream;
+        Logger noopLogger(0, nullStream);
+        SearchContext context(noopLogger, resourceCounts, currentLevels);
+        Proposal proposal;
+        string strategy;
+        auto threadID = this_thread::get_id();
+        OptimizationPackage localPackage;
+        while (!st.stop_requested()) {
+            bool improved = false;
+            strategy = defaultStrategy;
+            uint64_t myVersion = currentVersion.load();
+            {
+            shared_lock packageLock(packageMutex);
+            localPackage = masterPackage;
+            }
+
+            if (!localPackage.deadMoves.contains(strategy));
+            else if (!localPackage.deadMoves.contains("Insert")) strategy = "Insert";
+            else if (!localPackage.deadMoves.contains("Swap")) strategy = "Swap";
+            else if (!localPackage.deadMoves.contains("Remove")) strategy = "Remove";
+            else if (!localPackage.deadMoves.contains("Rotate")) strategy = "Rotate";
+
+            if      (strategy == "Insert") improved = tryInsertUpgrade(localPackage, context, &proposal);
+            else if (strategy == "Swap")   improved = trySwapUpgrades(localPackage, context, &proposal);
+            else if (strategy == "Remove") improved = tryRemoveUpgrade(localPackage, context, &proposal);
+            else if (strategy == "Rotate") improved = exhaustRotateSubsequences(localPackage, context, &proposal);
+
+            if (improved) {
+                lock_guard proposalLock(proposalMutex);
+                if (!sharedProposal.has_value()) {
+                    if (myVersion != currentVersion.load()) continue;
+                    sharedProposal = proposal;
+                    //cout << "Worker Thread " << threadID << " found proposal " << strategy << "\n";
+                    this_thread::sleep_for(1ms);
+                }
+            }
+            else{
+                lock_guard deadMoveLock(deadMoveMutex);
+                if (!sharedDeadMove.has_value()) {
+                    if (myVersion != currentVersion.load()) continue;
+                    sharedDeadMove = strategy;
+                    //cout << "Worker Thread " << threadID << " found dead move " << strategy << "\n";
+                    this_thread::sleep_for(1ms);
+                }
+            }
+        }
+    };
+
+    // Launch worker threads
+    vector<jthread> workers;
+    vector<string> strategies = {"Insert", "Remove", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Swap", "Rotate"};
+    for (int i = 0; i < num_cores - 1; ++i) {
+        string preferredStrategy = strategies[i];
+        workers.emplace_back([&, preferredStrategy](stop_token st) {workerFunc(st, preferredStrategy);});
+    }
+
+    while (true) {
+        if (masterPackage.deadMoves.contains("Rotate")) break;
+        lock_guard proposalLock(proposalMutex);
+        if (sharedProposal.has_value()) {
+            lock_guard deadMoveLock(deadMoveMutex);
+            unique_lock packageLock(packageMutex);
+            if (sharedProposal.value().type == "Insert") masterPackage.path.insert(masterPackage.path.begin() + sharedProposal.value().indexA, sharedProposal.value().upgrade);
+            else if (sharedProposal.value().type == "Swap") swap(masterPackage.path[sharedProposal.value().indexA],masterPackage.path[sharedProposal.value().indexB]);
+            else if (sharedProposal.value().type == "Remove") masterPackage.path.erase(masterPackage.path.begin() + sharedProposal.value().indexA);
+            else if (sharedProposal.value().type == "Rotate") rotate(masterPackage.path.begin() + sharedProposal.value().indexA, masterPackage.path.begin() + sharedProposal.value().rotateIndex, masterPackage.path.begin() + sharedProposal.value().indexB);
+            
+            masterPackage.score = sharedProposal.value().newScore;
+            masterPackage.deadMoves.clear();
+            masterLogger.logImprovement(sharedProposal.value().type, masterPackage.path, masterPackage.score);
+            sharedProposal.reset();
+            sharedDeadMove.reset();
+            currentVersion++;
+            continue;
+        }
+        lock_guard deadMoveLock(deadMoveMutex);
+        if (sharedDeadMove.has_value()) {
+            unique_lock packageLock(packageMutex);
+            masterPackage.deadMoves.insert(sharedDeadMove.value());
+            sharedDeadMove.reset();
+            currentVersion++;
+            continue;
+        }
+    };
+
+    return masterPackage.path;
+}
 int main() {
     upgradePath.reserve(500);
     vector<int> levelsCopy(currentLevels);
@@ -643,13 +795,20 @@ int main() {
     preprocessBusyTimes(busyTimesStart, busyTimesEnd);
 
     if (runOptimization) {
-        random_device seed;
-        mt19937 randomEngine(seed());
-        Logger logger(outputInterval);
-        SearchContext context{logger, resourceCounts, currentLevels};
-        OptimizationPackage package = {generateRandomPath(), 0, move(randomEngine)};
-        optimizeUpgradePath(package, context);
-        upgradePath = move(package.path);
+        if (multithreading && num_cores > 2) {
+            upgradePath = parallelOptimization();
+        }
+        else {
+
+            // upgradePath = masterWorkerOptimization(); // Unfinished Speed Optimizations
+            random_device seed;
+            mt19937 randomEngine(seed());
+            Logger logger(outputInterval);
+            SearchContext context{logger, resourceCounts, currentLevels};
+            OptimizationPackage package = {generateRandomPath(), 0, move(randomEngine)};
+            optimizeUpgradePath(package, context);
+            upgradePath = move(package.path);
+        }
     }
     
     if (upgradePath.empty()) {          
