@@ -83,11 +83,11 @@ const vector<double> busyTimesStart =   {16,40,64,88,112,136,160,184,208,232,256
 const vector<double> busyTimesEnd =     {24,48,72,96,120,144,168,192,216,240,264,288,312,336};
 // END ADVANCED SETTINGS ------------------------------------------------------------------
 // PROGRAM SETTINGS -----------------------------------------------------------------------
-constexpr array<const char*, 10> resourceNames = {"Chair", "Bucket", "Goggles", "Water Gun", "Surfboard", "Sunglasses" "PET_STONES", "FREE_EXP", "GROWTH", "EVENT_CURRENCY"};
+constexpr array<const char*, 10> resourceNames = {"Chair", "Bucket", "Goggles", "Water_Gun", "Surfboard", "Sunglasses", "PET_STONES", "FREE_EXP", "GROWTH", "EVENT_CURRENCY"};
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
-int num_cores = 16; //thread::hardware_concurrency()/2;
+int num_cores = thread::hardware_concurrency()/2;
 
 map<int, string> upgradeNames;
 array<double, TOTAL_SECONDS> timeNeededSeconds{};
@@ -198,10 +198,10 @@ void printFormattedResults(vector<int>& path, vector<int>& simulationLevels, vec
     cout << "Free Exp (" << DLs << " DLs): " 
         << simulationResources[7] * (500.0 + DLs) / 5.0 
         << " (" << simulationResources[7] << " levels * cycles)" << "\n";
-    cout << "Pet Stones: " << simulationResources[8] << "\n";
+    cout << "Pet Stones: " << simulationResources[6] << "\n";
     cout << "Growth (" << UNLOCKED_PETS << " pets): " 
-        << simulationResources[6] * UNLOCKED_PETS / 100.0 
-        << " (" << simulationResources[6] << " levels * cycles)" << "\n";
+        << simulationResources[8] * UNLOCKED_PETS / 100.0 
+        << " (" << simulationResources[8] << " levels * cycles)" << "\n";
     cout << "Score: " << finalScore << "\n";
 }
 void preprocessBusyTimes(const vector<double>& startHours, const vector<double>& endHours) {
@@ -409,8 +409,8 @@ double calculateScore(vector<double>& resources, bool display = false) {
     score += (min(resources[9], 10000.0) + max(0.0, (resources[9] - 10000)) * 0.01) * (EVENT_CURRENCY_WEIGHT);
     
     score += resources[7] * (FREE_EXP_WEIGHT);     // Free EXP
-    score += resources[8] * (PET_STONES_WEIGHT);   // Pet Stones
-    score += resources[6] * (GROWTH_WEIGHT);       // Growth
+    score += resources[8] * (GROWTH_WEIGHT);   // Growth
+    score += resources[6] * (PET_STONES_WEIGHT);       // Pet Stones
     
     return score;
 }
