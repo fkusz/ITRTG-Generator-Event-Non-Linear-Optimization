@@ -61,8 +61,8 @@ vector<double> resourceCounts = {
 vector<int> upgradePath = {};
 
 const bool isFullPath = false;
-const bool allowSpeedUpgrades = true; 
-const bool runOptimization = true;   
+const bool allowSpeedUpgrades = true; // Probably should always be set to true... legacy feature that I don't want to remove. Tells the optimizer if it's allowed to add/remove speed upgrades from your path (why wouldn't you want it to??)
+const bool runOptimization = true;   // Set False to see the results and timings of your path
 
 // END USER SETTINGS ---------------------------------------------------------------------
 // ADVANCED SETTINGS ---------------------------------------------------------------------
@@ -90,7 +90,6 @@ array<double, TOTAL_SECONDS> timeNeededSeconds{};
 template <typename T>
 void printVector(vector<T>& x, ostream& out = cout) {
     for (auto item : x) out << item << ",";
-    out << "\n";
 }
 class NullBuffer : public std::streambuf {
 public:
@@ -118,8 +117,10 @@ public:
         auto elapsed = chrono::duration_cast<chrono::milliseconds>(now - lastLogTime).count();
 
         if (elapsed >= interval) {
-            out << "Improved path: (" << type << ") ";
+            out << "Improved path (" << type << "): \n";
+            out << "{";
             printVector(path, out);
+            out << "} \n";
             out << "Score: " << score << "\n";
             lastLogTime = now;
         }
@@ -180,12 +181,15 @@ vector <int> adjustFullPath(vector<int>& levels){ // This is not thread-safe
     return levels;
 }
 void printFormattedResults(vector<int>& path, vector<int>& simulationLevels, vector<double>& simulationResources, double finalScore) {
-    cout << "Upgrade Path: ";
+    cout << "Upgrade Path: \n{";
     printVector(path);
+    cout << "}\n";
     cout << "Final Resource Counts: ";
     printVector(simulationResources);
+    cout << "\n";
     cout << "Final Upgrade Levels: ";
     printVector(simulationLevels);
+    cout << "\n";
 
     cout << "Event Currency: " << simulationResources[9] << "\n";
     cout << "Free Exp (" << DLs << " DLs): " 
@@ -195,7 +199,7 @@ void printFormattedResults(vector<int>& path, vector<int>& simulationLevels, vec
     cout << "Growth (" << UNLOCKED_PETS << " pets): " 
         << simulationResources[8] * UNLOCKED_PETS / 100.0 
         << " (" << simulationResources[8] << " levels * cycles)" << "\n";
-    cout << "Score: " << finalScore << "\n";
+    cout << "Score: " << finalScore << "\n\n";
 }
 void preprocessBusyTimes(const vector<double>& startHours, const vector<double>& endHours) {
     for (size_t i = 0; i < startHours.size(); ++i) {
@@ -588,7 +592,7 @@ bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& cont
     package.deadMoves.insert("Rotate");
     return false;
 }
-void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, const int maxIterations = 1000) {
+void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, const int maxIterations = 10000) {
 
     random_device seed;
     mt19937 randomEngine(seed());
@@ -642,21 +646,24 @@ int main() {
     nameUpgrades();
     preprocessBusyTimes(busyTimesStart, busyTimesEnd);
 
+    if (upgradePath.empty()) {          
+        upgradePath = generateRandomPath();
+    }
+
+    if (isFullPath) {
+        levelsCopy = adjustFullPath(levelsCopy);
+    }
+
+    calculateFinalPath(upgradePath);
+
     if (runOptimization) {
         random_device seed;
         mt19937 randomEngine(seed());
         Logger logger(outputInterval);
         SearchContext context{logger, resourceCounts, currentLevels};
-        OptimizationPackage package = {generateRandomPath(), 0, move(randomEngine)};
+        OptimizationPackage package = {upgradePath, 0, move(randomEngine)};
         optimizeUpgradePath(package, context);
         upgradePath = move(package.path);
-    }
-    
-    if (upgradePath.empty()) {          
-        upgradePath = generateRandomPath();
-    }
-    if (isFullPath) {
-        levelsCopy = adjustFullPath(levelsCopy);
     }
 
     calculateFinalPath(upgradePath);
