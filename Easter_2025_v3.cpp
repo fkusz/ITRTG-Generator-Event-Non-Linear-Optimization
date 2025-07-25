@@ -57,9 +57,9 @@ vector<int> currentLevels = {
 vector<double> resourceCounts = { 
     0,  500000, 0,    
     0,  0, 0,   
-    0/(UNLOCKED_PETS/100.0),   
+    0,   
     0/((500.0+DLs)/5.0), 
-    0,                        
+    0/(UNLOCKED_PETS/100.0),                        
     0,                        
 };
 
@@ -83,7 +83,7 @@ const vector<double> busyTimesStart =   {16,40,64,88,112,136,160,184,208,232,256
 const vector<double> busyTimesEnd =     {24,48,72,96,120,144,168,192,216,240,264,288,312,336};
 // END ADVANCED SETTINGS ------------------------------------------------------------------
 // PROGRAM SETTINGS -----------------------------------------------------------------------
-constexpr array<const char*, 10> resourceNames = {"Red", "White", "Blue", "Green", "Colorful", "Yellow", "GROWTH", "FREE_EXP", "PET_STONES", "EVENT_CURRENCY"};
+constexpr array<const char*, 10> resourceNames = {"Chair", "Bucket", "Goggles", "Water Gun", "Surfboard", "Sunglasses" "PET_STONES", "FREE_EXP", "GROWTH", "EVENT_CURRENCY"};
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
@@ -252,9 +252,9 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, int upgrad
         1.0/3.0,    
         1.0/3.0,    
         1.0/3.0,    
-        1.0/1800.0, 
-        1.0/2500.0, 
         1.0/1200.0, 
+        1.0/2500.0, 
+        1.0/1800.0, 
         1.0/5000.0  
     };
     constexpr double speedMultipliers[11] = {
@@ -287,35 +287,35 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, int upgrad
     
     switch (resourceType) {
         case 0:
-            cost[1] = baseCost;
+            cost[1] = baseCost * 10;
             break;
         case 1:
             cost[1] = baseCost * 0.8;
             break;
         case 2:
-            cost[1] = baseCost * 10;
+            cost[1] = baseCost;
             break;
         case 3:
-            cost[1] = baseCost;
             cost[0] = baseCost;
             break;
         case 4:
-            cost[2] = baseCost;
+            cost[0] = baseCost;
             break;
         case 5:
+            cost[1] = baseCost;
             cost[2] = baseCost;
             break;
         case 6:
-            cost[0] = baseCost * 1.2;
-            cost[3] = baseCost;      
+            cost[0] = baseCost * 0.7;
+            cost[3] = baseCost * 0.5;      
             break;
         case 7:
-            cost[2] = baseCost;    
+            cost[0] = baseCost;    
             cost[4] = baseCost * 3;
             break;
         case 8:
-            cost[2] = baseCost * 0.7;
-            cost[5] = baseCost * 0.5;
+            cost[2] = baseCost * 1.2;
+            cost[5] = baseCost;
             break;
         case 9:
             cost[3] = baseCost;
@@ -800,14 +800,14 @@ int main() {
         }
         else {
 
-            upgradePath = masterWorkerOptimization();
-            // random_device seed;
-            // mt19937 randomEngine(seed());
-            // Logger logger(outputInterval);
-            // SearchContext context{logger, resourceCounts, currentLevels};
-            // OptimizationPackage package = {generateRandomPath(), 0, move(randomEngine)};
-            // optimizeUpgradePath(package, context);
-            // upgradePath = move(package.path);
+            // upgradePath = masterWorkerOptimization(); // Unfinished Speed Optimizations
+            random_device seed;
+            mt19937 randomEngine(seed());
+            Logger logger(outputInterval);
+            SearchContext context{logger, resourceCounts, currentLevels};
+            OptimizationPackage package = {generateRandomPath(), 0, move(randomEngine)};
+            optimizeUpgradePath(package, context);
+            upgradePath = move(package.path);
         }
     }
     
