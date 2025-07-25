@@ -71,16 +71,16 @@ const bool runOptimization = true;
 
 // END USER SETTINGS ---------------------------------------------------------------------
 // ADVANCED SETTINGS ---------------------------------------------------------------------
-const int outputInterval = 1000; //How often to print results (milliseconds)
-const bool multithreading = false;
+const int outputInterval = 1000; //How often results may be printed (milliseconds)
+const bool multithreading = false; // If true, run on multiple CPU cores. (Probably not worth it yet)
 
 const double EVENT_CURRENCY_WEIGHT = 100e-5; 
 const double FREE_EXP_WEIGHT = 6e-5;     
 const double PET_STONES_WEIGHT = 3.5e-5;  
 const double GROWTH_WEIGHT = 8e-5;       
 
-const vector<double> busyTimesStart =   {16,40,64,88,112,136,160,184,208,232,256,280,304,328}; 
-const vector<double> busyTimesEnd =     {24,48,72,96,120,144,168,192,216,240,264,288,312,336};
+const vector<double> busyTimesStart =   {}; // The first hours, relative to the start of the simulation, you'll be unable to purchase upgrades
+const vector<double> busyTimesEnd =     {}; // The first hours, relative to the start of the simulation, you'll be able to purchase upgrades again
 // END ADVANCED SETTINGS ------------------------------------------------------------------
 // PROGRAM SETTINGS -----------------------------------------------------------------------
 constexpr array<const char*, 10> resourceNames = {"Chair", "Bucket", "Goggles", "Water_Gun", "Surfboard", "Sunglasses", "PET_STONES", "FREE_EXP", "GROWTH", "EVENT_CURRENCY"};
