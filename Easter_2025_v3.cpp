@@ -413,13 +413,14 @@ double evaluatePath(vector<int>& path, const SearchContext& context){
     simulateUpgradePath(path, testLevels, testResources);
     return calculateScore(testResources);
 }
-void calculateFinalPath(vector<int>& path){
+double calculateFinalPath(vector<int>& path){
     vector<int>     simulationLevels(currentLevels);
     vector<double>  simulationResources(resourceCounts);
 
     simulateUpgradePath(path, simulationLevels, simulationResources, true);
     double simulationScore = calculateScore(simulationResources);
     printFormattedResults(path, simulationLevels, simulationResources, simulationScore);
+    return simulationScore;
 }
 bool tryInsertUpgrade(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
 
@@ -654,14 +655,14 @@ int main() {
         levelsCopy = adjustFullPath(levelsCopy);
     }
 
-    calculateFinalPath(upgradePath);
+    double initial_score = calculateFinalPath(upgradePath);
 
     if (runOptimization) {
         random_device seed;
         mt19937 randomEngine(seed());
         Logger logger(outputInterval);
         SearchContext context{logger, resourceCounts, currentLevels};
-        OptimizationPackage package = {upgradePath, 0, move(randomEngine)};
+        OptimizationPackage package = {upgradePath, initial_score, move(randomEngine)};
         optimizeUpgradePath(package, context);
         upgradePath = move(package.path);
     }
