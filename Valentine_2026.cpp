@@ -704,37 +704,35 @@ int main() {
     double UltraScore = 0;
     nameUpgrades();
     preprocessBusyTimes(busyTimesStart, busyTimesEnd);
-    ofstream MyFile;
-    MyFile.open("OptimizedPaths.txt", ios::app);
-    while (true) {
-        if (upgradePath.empty()) {          
-            upgradePath = generateRandomPath();
-        }
 
-        if (isFullPath) {
-            levelsCopy = adjustFullPath(levelsCopy);
-        }
-
-        double initial_score = calculateFinalPath(upgradePath);
-
-        if (runOptimization) {
-            random_device seed;
-            mt19937 randomEngine(seed());
-            Logger logger(outputInterval);
-            SearchContext context{logger, resourceCounts, currentLevels};
-            OptimizationPackage package = {upgradePath, initial_score, move(randomEngine)};
-            optimizeUpgradePath(package, context);
-            upgradePath = move(package.path);
-        }
-        finalScore =calculateFinalPath(upgradePath);
-        if (finalScore >= UltraScore) {
-            UltraScore = finalScore;
-            printVector(upgradePath, MyFile);
-            MyFile << endl;
-            MyFile << "Final score: " << finalScore << endl << endl;
-        }
-        upgradePath = {};
+    if (upgradePath.empty()) {          
+        upgradePath = generateRandomPath();
     }
+
+    if (isFullPath) {
+        levelsCopy = adjustFullPath(levelsCopy);
+    }
+
+    double initial_score = calculateFinalPath(upgradePath);
+
+    if (runOptimization) {
+        random_device seed;
+        mt19937 randomEngine(seed());
+        Logger logger(outputInterval);
+        SearchContext context{logger, resourceCounts, currentLevels};
+        OptimizationPackage package = {upgradePath, initial_score, move(randomEngine)};
+        optimizeUpgradePath(package, context);
+        upgradePath = move(package.path);
+    }
+    finalScore =calculateFinalPath(upgradePath);
+    if (finalScore >= UltraScore) {
+        UltraScore = finalScore;
+        printVector(upgradePath, cout);
+        cout << endl;
+        cout << "Final score: " << finalScore << endl << endl;
+    }
+    upgradePath = {};
+    
     return 0;
 }   
 
