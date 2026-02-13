@@ -31,53 +31,51 @@ const int EVENT_DURATION_DAYS = 14;
 const int EVENT_DURATION_HOURS = 0;
 const int EVENT_DURATION_MINUTES = 0;
 const int EVENT_DURATION_SECONDS = 0;
-const int UNLOCKED_PETS = 37;
-const int DLs = 369;
+const int UNLOCKED_PETS = 52;
+const int DLs = 1138;
 
 vector<int> currentLevels = { 
     // Production Levels
-    0, 1, 0,
     0, 0, 0,
     0, 0, 0,
-    0,            // Event Currency
+    0, 0, 0,
+    0, 0, 0,   // Event Currency
     
     // Speed Levels
     0, 0, 0,
     0, 0, 0,
     0, 0, 0,
-    0,            // Event Currency
+    0, 0, 0,   // Event Currency
     
-    0             // Dummy placeholder
+    0             // Dummy placeholder. Keep 0
 };
 vector<double> resourceCounts = { 
-    0,  500000, 0,    
-    0,  0, 0,   
-    0,   
-    0/((500.0+DLs)/5.0), 
-    0/(UNLOCKED_PETS/100.0),                        
-    0,                        
+    0, 500000, 0,    
+    0, 0, 0,  
+    0/((500.0+DLs)/5.0), 0, 0,
+    0, 0, 0/(UNLOCKED_PETS/100.0)                        
 };
 
 vector<int> upgradePath = {};
 
 const bool isFullPath = false;
-const bool allowSpeedUpgrades = true; // Probably should always be set to true... legacy feature that I don't want to remove. Tells the optimizer if it's allowed to add/remove speed upgrades from your path (why wouldn't you want it to??)
-const bool runOptimization = true;   // Set False to see the results and timings of your path
+const bool runOptimization = true;   // Set False to only see the results and timings of your path
 
 // END USER SETTINGS ---------------------------------------------------------------------
 // ADVANCED SETTINGS ---------------------------------------------------------------------
-const int outputInterval = 1000; //How often results may be printed (milliseconds)
+const int outputInterval = 3000; //How often results may be printed (milliseconds)
 
 const double EVENT_CURRENCY_WEIGHT = 100e-5; 
 const double FREE_EXP_WEIGHT = 6e-5;     
-const double PET_STONES_WEIGHT = 3.5e-5;  
+const double PET_STONES_WEIGHT = 3.5e-5;
+const double RESEARCH_POINTS_WEIGHT = 2e-5;  
 const double GROWTH_WEIGHT = 8e-5;       
 
 const vector<double> busyTimesStart =   {}; // The first hours, relative to the start of the simulation, you'll be unable to purchase upgrades
 const vector<double> busyTimesEnd =     {}; // The first hours, relative to the start of the simulation, you'll be able to purchase upgrades again
 // END ADVANCED SETTINGS ------------------------------------------------------------------
 // PROGRAM SETTINGS -----------------------------------------------------------------------
-constexpr array<const char*, 10> resourceNames = {"Chair", "Bucket", "Goggles", "Water_Gun", "Surfboard", "Sunglasses", "PET_STONES", "FREE_EXP", "GROWTH", "EVENT_CURRENCY"};
+constexpr array<const char*, 12> resourceNames = {"Love Bow", "Love Arrows", "Chocolate", "Cubear", "Rose", "Cake", "FREE_EXP", "Love Bear", "PET_STONES", "RESEARCH_POINTS", "EVENT_CURRENCY", "GROWTH"};
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
@@ -157,15 +155,16 @@ struct Proposal {
     static Proposal Rotate(int indexA, int indexB, int rotateIndex, double score) {
         return Proposal{"Rotate", score, indexA, indexB, rotateIndex, 0};
     }
-
-    // Add other helpers as needed
+    static Proposal Replace(int index, int upgradeType, double score) {
+        return Proposal{"Replace", score, index, 0, 0, upgradeType};
+    }
 };
 void nameUpgrades() {
     for (int i = 0; i < NUM_RESOURCES; i++) {
         upgradeNames[i] = string(resourceNames[i]) + "_Level";
         upgradeNames[i + NUM_RESOURCES] = string(resourceNames[i]) + "_Speed";
     }
-    upgradeNames[20] = "Complete";
+    upgradeNames[24] = "Complete";
 }
 vector <int> adjustFullPath(vector<int>& levels){ // This is not thread-safe
     levels[1]--; // Adjust first level because it always starts at 1
@@ -193,12 +192,12 @@ void printFormattedResults(vector<int>& path, vector<int>& simulationLevels, vec
 
     cout << "Event Currency: " << simulationResources[9] << "\n";
     cout << "Free Exp (" << DLs << " DLs): " 
-        << simulationResources[7] * (500.0 + DLs) / 5.0 
-        << " (" << simulationResources[7] << " levels * cycles)" << "\n";
+        << simulationResources[6] * (500.0 + DLs) / 5.0 
+        << " (" << simulationResources[6] << " levels * cycles)" << "\n";
     cout << "Pet Stones: " << simulationResources[6] << "\n";
     cout << "Growth (" << UNLOCKED_PETS << " pets): " 
-        << simulationResources[8] * UNLOCKED_PETS / 100.0 
-        << " (" << simulationResources[8] << " levels * cycles)" << "\n";
+        << simulationResources[11] * UNLOCKED_PETS / 100.0 
+        << " (" << simulationResources[11] << " levels * cycles)" << "\n";
     cout << "Score: " << finalScore << "\n\n";
 }
 void preprocessBusyTimes(const vector<double>& startHours, const vector<double>& endHours) {
@@ -221,7 +220,7 @@ inline double additionalTimeNeeded(double expectedTimeSeconds) {
 vector <int> generateRandomPath(int length = TOTAL_SECONDS/3600) {
     vector<int> randomPath = {};
     for (int i = 0; i < length; i++) {
-        randomPath.push_back(rand() % NUM_RESOURCES + 10 * (rand() % 2));
+        randomPath.push_back(rand() % NUM_RESOURCES + NUM_RESOURCES * (rand() % 2));
     }
     randomPath.push_back(NUM_RESOURCES * 2);
     return randomPath;
@@ -236,17 +235,19 @@ void readoutUpgrade(int upgradeType, vector<int>& levels, int elapsedSeconds) {
 // ALGORITHM FUNCTIONS ------------------------------------------------------------------
 double performUpgrade(vector<int>& levels, vector<double>& resources, int upgradeType, double& remainingTime) {
 
-    constexpr double cycleTimeMultiplier[10] = {
-        1.0/3.0,    
-        1.0,        
-        1.0/3.0,    
-        1.0/3.0,    
-        1.0/3.0,    
-        1.0/3.0,    
-        1.0/1200.0, 
-        1.0/2500.0, 
-        1.0/1800.0, 
-        1.0/5000.0  
+    constexpr double cycleTimeMultiplier[12] = {
+        1.0 / 3.0,
+        1.0,
+        1.0 / 3.0,
+        1.0 / 5.0,
+        1.0 / 5.0,
+        1.0 / 5.0,
+        1.0 / 2500.0,
+        1.0 / 5.0,
+        1.0 / 1200.0,
+        1.0 / 1200.0,
+        1.0 / 5000.0,
+        1.0 / 1800.0 
     };
     constexpr double speedMultipliers[11] = {
         1.0,
@@ -268,63 +269,70 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, int upgrad
     }
     
     int newLevel = levels[upgradeType] + 1;
-    double baseCost = (3.0 * newLevel * newLevel * newLevel + 1.0) * 100.0;
+    double baseCost = (newLevel * newLevel * newLevel + 1.0) * 100.0;
 
-    if (upgradeType >= NUM_RESOURCES) baseCost *= 2.0;
+    if (upgradeType >= NUM_RESOURCES) baseCost *= 2.5;
 
     
-    double cost[10] = {};
-    double productionRates[10] = {};
+    double cost[12] = {};
+    double productionRates[12] = {};
     
     switch (resourceType) {
         case 0:
-            cost[1] = baseCost * 10;
+            cost[1] = baseCost * 2;
             break;
         case 1:
-            cost[1] = baseCost * 0.8;
+            cost[1] = baseCost;
             break;
         case 2:
-            cost[1] = baseCost;
+            cost[1] = baseCost * 2;
             break;
         case 3:
-            cost[0] = baseCost;
+            cost[0] = baseCost * 1.5;
+            cost[1] = baseCost * 1.5;
             break;
         case 4:
-            cost[0] = baseCost;
+            cost[1] = baseCost * 2;
             break;
         case 5:
-            cost[1] = baseCost;
-            cost[2] = baseCost;
+            cost[1] = baseCost * 1.5;
+            cost[2] = baseCost * 1.5;
             break;
         case 6:
-            cost[0] = baseCost * 0.7;
-            cost[3] = baseCost * 0.5;      
+            cost[3] = baseCost * 5;
             break;
         case 7:
-            cost[0] = baseCost;    
-            cost[4] = baseCost * 3;
+            cost[1] = baseCost * 1.5;
+            cost[4] = baseCost * 1.5;
             break;
         case 8:
-            cost[2] = baseCost * 1.2;
-            cost[5] = baseCost;
+            cost[5] = baseCost * 5;
             break;
         case 9:
-            cost[3] = baseCost;
-            cost[4] = baseCost;
-            cost[5] = baseCost;
+            cost[3] = baseCost * 2.5;
+            cost[4] = baseCost * 2.5;
             break;
+        case 10:
+            cost[3] = baseCost * 3;
+            cost[4] = baseCost * 3;
+            cost[5] = baseCost * 3;
+        case 11:
+            cost[5] = baseCost * 2.5;
+            cost[7] = baseCost * 2.5;
     }
     
-    productionRates[0] = levels[0] * cycleTimeMultiplier[0] * speedMultipliers[levels[10]]; // Turning this into a loop worsenes performance
-    productionRates[1] = levels[1] * cycleTimeMultiplier[1] * speedMultipliers[levels[11]]; 
-    productionRates[2] = levels[2] * cycleTimeMultiplier[2] * speedMultipliers[levels[12]];
-    productionRates[3] = levels[3] * cycleTimeMultiplier[3] * speedMultipliers[levels[13]];
-    productionRates[4] = levels[4] * cycleTimeMultiplier[4] * speedMultipliers[levels[14]];
-    productionRates[5] = levels[5] * cycleTimeMultiplier[5] * speedMultipliers[levels[15]];
-    productionRates[6] = levels[6] * cycleTimeMultiplier[6] * speedMultipliers[levels[16]];
-    productionRates[7] = levels[7] * cycleTimeMultiplier[7] * speedMultipliers[levels[17]];
-    productionRates[8] = levels[8] * cycleTimeMultiplier[8] * speedMultipliers[levels[18]];
-    productionRates[9] = levels[9] * cycleTimeMultiplier[9] * speedMultipliers[levels[19]];
+    productionRates[0] = levels[0] * cycleTimeMultiplier[0] * speedMultipliers[levels[12]]; // Turning this into a loop worsenes performance
+    productionRates[1] = levels[1] * cycleTimeMultiplier[1] * speedMultipliers[levels[13]]; 
+    productionRates[2] = levels[2] * cycleTimeMultiplier[2] * speedMultipliers[levels[14]];
+    productionRates[3] = levels[3] * cycleTimeMultiplier[3] * speedMultipliers[levels[15]];
+    productionRates[4] = levels[4] * cycleTimeMultiplier[4] * speedMultipliers[levels[16]];
+    productionRates[5] = levels[5] * cycleTimeMultiplier[5] * speedMultipliers[levels[17]];
+    productionRates[6] = levels[6] * cycleTimeMultiplier[6] * speedMultipliers[levels[18]];
+    productionRates[7] = levels[7] * cycleTimeMultiplier[7] * speedMultipliers[levels[19]];
+    productionRates[8] = levels[8] * cycleTimeMultiplier[8] * speedMultipliers[levels[20]];
+    productionRates[9] = levels[9] * cycleTimeMultiplier[9] * speedMultipliers[levels[21]];
+    productionRates[10] = levels[10] * cycleTimeMultiplier[10] * speedMultipliers[levels[22]];
+    productionRates[11] = levels[11] * cycleTimeMultiplier[11] * speedMultipliers[levels[23]];
     
     // Calculate time needed for the upgrade
     double timeNeeded = 0;
@@ -333,7 +341,7 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, int upgrad
         double neededResources = cost[i] - resources[i];
         if (neededResources <= 0) continue;
         if (productionRates[i] == 0) {
-            timeNeeded = INFINITY_VALUE; 
+            timeNeeded = INFINITY_VALUE;
             break;
         }
         timeNeeded = max(timeNeeded, neededResources / productionRates[i]);
@@ -356,6 +364,8 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, int upgrad
         resources[7] += productionRates[7] * timeNeeded;
         resources[8] += productionRates[8] * timeNeeded;
         resources[9] += productionRates[9] * timeNeeded;
+        resources[10] += productionRates[10] * timeNeeded;
+        resources[11] += productionRates[11] * timeNeeded;
         return timeNeeded;
     }
 
@@ -369,6 +379,8 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, int upgrad
     resources[7] += productionRates[7] * timeNeeded - cost[7];
     resources[8] += productionRates[8] * timeNeeded - cost[8];
     resources[9] += productionRates[9] * timeNeeded - cost[9];
+    resources[10] += productionRates[10] * timeNeeded - cost[10];
+    resources[11] += productionRates[11] * timeNeeded - cost[11];
 
     levels[upgradeType]++;
     
@@ -397,11 +409,11 @@ double calculateScore(vector<double>& resources, bool display = false) {
         score += resources[i] * 1e-15;
     }
 
-    score += (min(resources[9], 10000.0) + max(0.0, (resources[9] - 10000)) * 0.01) * (EVENT_CURRENCY_WEIGHT);
-    
-    score += resources[7] * (FREE_EXP_WEIGHT);     // Free EXP
-    score += resources[8] * (GROWTH_WEIGHT);   // Growth
-    score += resources[6] * (PET_STONES_WEIGHT);       // Pet Stones
+    score += (min(resources[10], 10000.0) + max(0.0, (resources[10] - 10000)) * 0.01) * (EVENT_CURRENCY_WEIGHT);
+    score += resources[6] * (FREE_EXP_WEIGHT);          // Free EXP
+    score += resources[8] * (PET_STONES_WEIGHT);        // Pet Stones
+    score += resources[9] * (RESEARCH_POINTS_WEIGHT);   // Research Points
+    score += resources[11] * (GROWTH_WEIGHT);           // Growth
     
     return score;
 }
@@ -429,14 +441,14 @@ bool tryInsertUpgrade(OptimizationPackage& package, SearchContext& context, Prop
 
     uniform_int_distribution<> positionDist(0, pathLength);
     int startPosition = positionDist(package.randomEngine);
-    const int maxTypes = (allowSpeedUpgrades ? NUM_RESOURCES * 2 : NUM_RESOURCES);
+    const int maxTypes = (NUM_RESOURCES * 2);
 
     for (int i = 0; i < pathLength; i++) {
         candidatePath = package.path;
         int modulatedInsertPosition = (i + startPosition) % pathLength;
         candidatePath.insert(candidatePath.begin() + modulatedInsertPosition, 0);
 
-        int startingUpgradeType = package.randomEngine() % (allowSpeedUpgrades ? NUM_RESOURCES * 2 : NUM_RESOURCES);
+        int startingUpgradeType = package.randomEngine() % (NUM_RESOURCES * 2);
         for (int upgradeType = 0; upgradeType < maxTypes; upgradeType++) {
 
             int modulatedUpgradeType = (upgradeType + startingUpgradeType) % maxTypes;
@@ -467,8 +479,6 @@ bool tryRemoveUpgrade(OptimizationPackage& package, SearchContext& context, Prop
     for (int i = 0; i < pathLength; i++) {
         int removePos = (i + startPos) % (pathLength);
 
-        if (!allowSpeedUpgrades && package.path[removePos] >= NUM_RESOURCES) continue;
-
         candidatePath = package.path;
         candidatePath.erase(candidatePath.begin() + removePos);
         double testScore = evaluatePath(candidatePath, context);
@@ -484,6 +494,50 @@ bool tryRemoveUpgrade(OptimizationPackage& package, SearchContext& context, Prop
     package.deadMoves.insert("Remove");
     return false;
 
+}
+bool tryReplaceUpgrade(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
+
+    int pathLength = package.path.size();
+    thread_local vector<int> candidatePath;
+
+    uniform_int_distribution<> positionDist(0, pathLength - 1); // -1 because we access index, not insert
+    int startPosition = positionDist(package.randomEngine);
+    const int maxTypes = (NUM_RESOURCES * 2);
+
+    for (int i = 0; i < pathLength; i++) {
+        // We do not resize the vector here
+        candidatePath = package.path; 
+        int targetIndex = (i + startPosition) % pathLength;
+        
+        // Store original to ensure we are actually changing it
+        int originalType = candidatePath[targetIndex];
+
+        int startingUpgradeType = package.randomEngine() % (NUM_RESOURCES * 2);
+        
+        for (int upgradeType = 0; upgradeType < maxTypes; upgradeType++) {
+            int modulatedUpgradeType = (upgradeType + startingUpgradeType) % maxTypes;
+
+            // Don't replace an upgrade with itself
+            if (modulatedUpgradeType == originalType) continue;
+
+            // PERFORM REPLACEMENT
+            candidatePath[targetIndex] = modulatedUpgradeType;
+
+            double testScore = evaluatePath(candidatePath, context);
+
+            if (testScore > package.score) {
+                if (outProposal) *outProposal = Proposal::Replace(targetIndex, modulatedUpgradeType, testScore);
+                
+                // Commit change to package
+                package.path = candidatePath; 
+                package.score = testScore;
+                context.logger.logImprovement("Replace", package.path, package.score);
+                return true;
+            }
+        }
+    }
+    package.deadMoves.insert("Replace");
+    return false;
 }
 bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
 
@@ -553,7 +607,6 @@ bool tryRotateSubsequences(OptimizationPackage& package, SearchContext& context,
 }
 bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
 
-
     int pathLength = package.path.size() - 1;
     int maxIndex = pathLength - 1;
     thread_local vector<int> candidatePath;
@@ -600,22 +653,23 @@ void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, c
 
     int iterationCount = 0;
     int noImprovementStreak = 0;
-    int InsertCount = 0, RemoveCount = 0, SwapCount = 0, RotationCount = 0;
-    double InsertRatio = 0, RemoveRatio = 0, SwapRatio = 0, RotationRatio = 0;
+    int InsertCount = 0, RemoveCount = 0, SwapCount = 0, RotationCount = 0, ReplaceCount = 0;
+    double InsertRatio = 0, RemoveRatio = 0, SwapRatio = 0, RotationRatio = 0, ReplaceRatio = 0;
     while (noImprovementStreak < maxIterations) {
         iterationCount++;
         bool improved = false;
 
         int strategy = iterationCount % 100;
 
-        if(package.deadMoves.count("Rotation")){
+        if(package.deadMoves.count("Rotate")){
             break;
         }
-        else if (package.deadMoves.count("Insert") && package.deadMoves.count("Remove") && package.deadMoves.count("Swap"))
-                                                                            {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
+        else if (package.deadMoves.count("Insert") && package.deadMoves.count("Remove") && package.deadMoves.count("Replace") && package.deadMoves.count("Swap"))
+                                                                         {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
         else if (strategy < 15 && !package.deadMoves.count("Insert"))    {improved = tryInsertUpgrade(package, context); if (improved) InsertCount++;}
-        else if (strategy < 30 && !package.deadMoves.count("Remove"))    {improved = tryRemoveUpgrade(package, context); if (improved) RemoveCount++;}
-        else if (strategy < 32)                                             {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
+        else if (strategy < 30 && !package.deadMoves.count("Replace"))   {improved = tryReplaceUpgrade(package, context); if (improved) ReplaceCount++;}
+        else if (strategy < 45 && !package.deadMoves.count("Remove"))    {improved = tryRemoveUpgrade(package, context); if (improved) RemoveCount++;}
+        else if (strategy < 47)                                          {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
         else if (!package.deadMoves.count("Swap"))                       {improved = trySwapUpgrades(package, context); if (improved) SwapCount++;}
         
         if (improved) {
@@ -625,49 +679,62 @@ void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, c
         } 
         else noImprovementStreak++;
     }
-    // Data collection for analysis. Realistically needs its own manager.
-    // InsertRatio = (double)InsertCount / iterationCount;
-    // RemoveRatio = (double)RemoveCount / iterationCount;
-    // SwapRatio = (double)SwapCount / iterationCount;
-    // RotationRatio = (double)RotationCount / iterationCount;
-    // cout << "Insert Count: " << InsertCount << "\n";
-    // cout << "Remove Count: " << RemoveCount << "\n";
-    // cout << "Swap Count: " << SwapCount << "\n";
-    // cout << "Rotation Count: " << RotationCount << "\n";
-    // cout << "Insert ratio: " << InsertRatio << "\n";
-    // cout << "Remove ratio: " << RemoveRatio << "\n";
-    // cout << "Swap ratio: " << SwapRatio << "\n";
-    // cout << "Rotation ratio: " << RotationRatio << "\n";
+    //Data collection for analysis. Realistically needs its own manager.
+    InsertRatio = (double)InsertCount / iterationCount;
+    ReplaceRatio = (double)ReplaceCount / iterationCount;
+    RemoveRatio = (double)RemoveCount / iterationCount;
+    SwapRatio = (double)SwapCount / iterationCount;
+    RotationRatio = (double)RotationCount / iterationCount;
+    cout << "Insert Count: " << InsertCount << "\n";
+    cout << "Replace Count: " << ReplaceCount << "\n";
+    cout << "Remove Count: " << RemoveCount << "\n";
+    cout << "Swap Count: " << SwapCount << "\n";
+    cout << "Rotation Count: " << RotationCount << "\n";
+    cout << "Insert ratio: " << InsertRatio << "\n";
+    cout << "Replace ratio: " << ReplaceRatio << "\n";
+    cout << "Remove ratio: " << RemoveRatio << "\n";
+    cout << "Swap ratio: " << SwapRatio << "\n";
+    cout << "Rotation ratio: " << RotationRatio << "\n";
 }
 
 int main() {
     upgradePath.reserve(500);
     vector<int> levelsCopy(currentLevels);
-    
+    double finalScore;
+    double UltraScore = 0;
     nameUpgrades();
     preprocessBusyTimes(busyTimesStart, busyTimesEnd);
+    ofstream MyFile;
+    MyFile.open("OptimizedPaths.txt", ios::app);
+    while (true) {
+        if (upgradePath.empty()) {          
+            upgradePath = generateRandomPath();
+        }
 
-    if (upgradePath.empty()) {          
-        upgradePath = generateRandomPath();
+        if (isFullPath) {
+            levelsCopy = adjustFullPath(levelsCopy);
+        }
+
+        double initial_score = calculateFinalPath(upgradePath);
+
+        if (runOptimization) {
+            random_device seed;
+            mt19937 randomEngine(seed());
+            Logger logger(outputInterval);
+            SearchContext context{logger, resourceCounts, currentLevels};
+            OptimizationPackage package = {upgradePath, initial_score, move(randomEngine)};
+            optimizeUpgradePath(package, context);
+            upgradePath = move(package.path);
+        }
+        finalScore =calculateFinalPath(upgradePath);
+        if (finalScore >= UltraScore) {
+            UltraScore = finalScore;
+            printVector(upgradePath, MyFile);
+            MyFile << endl;
+            MyFile << "Final score: " << finalScore << endl << endl;
+        }
+        upgradePath = {};
     }
-
-    if (isFullPath) {
-        levelsCopy = adjustFullPath(levelsCopy);
-    }
-
-    double initial_score = calculateFinalPath(upgradePath);
-
-    if (runOptimization) {
-        random_device seed;
-        mt19937 randomEngine(seed());
-        Logger logger(outputInterval);
-        SearchContext context{logger, resourceCounts, currentLevels};
-        OptimizationPackage package = {upgradePath, initial_score, move(randomEngine)};
-        optimizeUpgradePath(package, context);
-        upgradePath = move(package.path);
-    }
-
-    calculateFinalPath(upgradePath);
     return 0;
 }   
 
