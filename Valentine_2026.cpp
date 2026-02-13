@@ -36,7 +36,7 @@ const int DLs = 1138;
 
 vector<int> currentLevels = { 
     // Production Levels
-    0, 0, 0,
+    0, 1, 0,
     0, 0, 0,
     0, 0, 0,
     0, 0, 0,   // Event Currency
