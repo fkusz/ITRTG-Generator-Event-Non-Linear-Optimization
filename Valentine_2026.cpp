@@ -190,7 +190,7 @@ void printFormattedResults(vector<int>& path, vector<int>& simulationLevels, vec
     printVector(simulationLevels);
     cout << "\n";
 
-    cout << "Event Currency: " << simulationResources[9] << "\n";
+    cout << "Event Currency: " << simulationResources[10] << "\n";
     cout << "Free Exp (" << DLs << " DLs): " 
         << simulationResources[6] * (500.0 + DLs) / 5.0 
         << " (" << simulationResources[6] << " levels * cycles)" << "\n";
