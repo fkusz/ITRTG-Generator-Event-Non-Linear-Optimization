@@ -163,8 +163,6 @@ struct Proposal {
     static Proposal Rotate(int indexA, int indexB, int rotateIndex, double score) {
         return Proposal{"Rotate", score, indexA, indexB, rotateIndex, 0};
     }
-
-    // Add other helpers as needed
 };
 void nameUpgrades() {
     for (int i = 0; i < NUM_RESOURCES; i++) {
