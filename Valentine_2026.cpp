@@ -36,7 +36,7 @@ const int DLs = 1138;
 
 vector<int> currentLevels = { 
     // Production Levels
-    0, 0, 0,
+    0, 1, 0,
     0, 0, 0,
     0, 0, 0,
     0, 0, 0,   // Event Currency
@@ -269,7 +269,7 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, int upgrad
     }
     
     int newLevel = levels[upgradeType] + 1;
-    double baseCost = (newLevel * newLevel * newLevel + 1.0) * 100.0;
+    double baseCost = newLevel * newLevel * newLevel * 100.0;
 
     if (upgradeType >= NUM_RESOURCES) baseCost *= 2.5;
 
