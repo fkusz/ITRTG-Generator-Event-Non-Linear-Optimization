@@ -60,6 +60,7 @@ vector<int> upgradePath = {};
 
 const bool isFullPath = false;
 const bool runOptimization = true;   // Set False to only see the results and timings of your path
+const bool endlessMode = false; //NOT WORKING YET-- Repeat optimization until *manually* stopped. Only save best result of all of them. Only works running locally
 
 // END USER SETTINGS ---------------------------------------------------------------------
 // ADVANCED SETTINGS ---------------------------------------------------------------------
@@ -75,7 +76,7 @@ const vector<double> busyTimesStart =   {}; // The first hours, relative to the 
 const vector<double> busyTimesEnd =     {}; // The first hours, relative to the start of the simulation, you'll be able to purchase upgrades again
 // END ADVANCED SETTINGS ------------------------------------------------------------------
 // PROGRAM SETTINGS -----------------------------------------------------------------------
-constexpr array<const char*, 12> resourceNames = {"Love Bow", "Love Arrows", "Chocolate", "Cubear", "Rose", "Cake", "FREE_EXP", "Love Bear", "PET_STONES", "RESEARCH_POINTS", "EVENT_CURRENCY", "GROWTH"};
+constexpr array<const char*, 12> resourceNames = {"Love_Bow", "Love_Arrows", "Chocolate", "Cubear", "Rose", "Cake", "FREE_EXP", "Love_Bear", "PET_STONES", "RESEARCH_POINTS", "EVENT_CURRENCY", "GROWTH"};
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
@@ -194,7 +195,8 @@ void printFormattedResults(vector<int>& path, vector<int>& simulationLevels, vec
     cout << "Free Exp (" << DLs << " DLs): " 
         << simulationResources[6] * (500.0 + DLs) / 5.0 
         << " (" << simulationResources[6] << " levels * cycles)" << "\n";
-    cout << "Pet Stones: " << simulationResources[6] << "\n";
+    cout << "Pet Stones: " << simulationResources[8] << "\n";
+    cout << "Research Points: " << simulationResources[9] << "\n";
     cout << "Growth (" << UNLOCKED_PETS << " pets): " 
         << simulationResources[11] * UNLOCKED_PETS / 100.0 
         << " (" << simulationResources[11] << " levels * cycles)" << "\n";
@@ -391,7 +393,7 @@ double simulateUpgradePath(vector<int>& path, vector<int>& levels, vector<double
     time = TOTAL_SECONDS;
     for (auto upgradeType : path) {
         if (time < 1e-3) return 0;
-        
+        if (upgradeType >= NUM_RESOURCES && levels[upgradeType] >= 10) return INFINITY_VALUE;
         double timeTaken = performUpgrade(levels, resources, upgradeType, time);
         time -= timeTaken;
         
@@ -701,14 +703,12 @@ int main() {
     upgradePath.reserve(500);
     vector<int> levelsCopy(currentLevels);
     double finalScore;
-    double UltraScore = 0;
     nameUpgrades();
     preprocessBusyTimes(busyTimesStart, busyTimesEnd);
 
     if (upgradePath.empty()) {          
         upgradePath = generateRandomPath();
     }
-
     if (isFullPath) {
         levelsCopy = adjustFullPath(levelsCopy);
     }
@@ -725,13 +725,6 @@ int main() {
         upgradePath = move(package.path);
     }
     finalScore =calculateFinalPath(upgradePath);
-    if (finalScore >= UltraScore) {
-        UltraScore = finalScore;
-        printVector(upgradePath, cout);
-        cout << endl;
-        cout << "Final score: " << finalScore << endl << endl;
-    }
-    upgradePath = {};
     
     return 0;
 }   
