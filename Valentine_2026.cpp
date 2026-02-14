@@ -59,7 +59,7 @@ vector<double> resourceCounts = {
 vector<int> upgradePath = {};
 
 const bool isFullPath = false;
-const bool runOptimization = true;   // Set False to only see the results and timings of your path
+const bool runOptimization = true;   // Set false to only see the results and timings of your path
 const bool endlessMode = false; //NOT WORKING YET-- Repeat optimization until *manually* stopped. Only save best result of all of them. Only works running locally
 
 // END USER SETTINGS ---------------------------------------------------------------------
@@ -318,9 +318,11 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, int upgrad
             cost[3] = baseCost * 3;
             cost[4] = baseCost * 3;
             cost[5] = baseCost * 3;
+            break;
         case 11:
             cost[5] = baseCost * 2.5;
             cost[7] = baseCost * 2.5;
+            break;
     }
     
     productionRates[0] = levels[0] * cycleTimeMultiplier[0] * speedMultipliers[levels[12]]; // Turning this into a loop worsenes performance
