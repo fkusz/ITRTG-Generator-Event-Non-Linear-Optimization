@@ -137,30 +137,7 @@ struct OptimizationPackage {
     mt19937 randomEngine;
     unordered_set<string> deadMoves = {};
 };
-struct Proposal {
-    string type;
-    double newScore;
-    int indexA = 0;
-    int indexB = 0;
-    int rotateIndex = 0;
-    int upgrade = 0;
 
-    static Proposal Insert(int index, int upgradeType, double score) {
-        return Proposal{"Insert", score, index, 0, 0, upgradeType};
-    }
-    static Proposal Remove(int index,  double score) {
-        return Proposal{"Remove", score, index, 0, 0, 0};
-    }
-    static Proposal Swap(int indexA, int IndexB, double score) {
-        return Proposal{"Swap", score, indexA, IndexB, 0, 0};
-    }
-    static Proposal Rotate(int indexA, int indexB, int rotateIndex, double score) {
-        return Proposal{"Rotate", score, indexA, indexB, rotateIndex, 0};
-    }
-    static Proposal Replace(int index, int upgradeType, double score) {
-        return Proposal{"Replace", score, index, 0, 0, upgradeType};
-    }
-};
 void nameUpgrades() {
     for (int i = 0; i < NUM_RESOURCES; i++) {
         upgradeNames[i] = string(resourceNames[i]) + "_Level";
@@ -439,116 +416,100 @@ double calculateFinalPath(vector<int>& path){
     printFormattedResults(path, simulationLevels, simulationResources, simulationScore);
     return simulationScore;
 }
-bool tryInsertUpgrade(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
+bool tryInsertUpgrade(OptimizationPackage& package, SearchContext& context) {
 
     int pathLength = package.path.size();
-    thread_local vector<int> candidatePath;
 
     uniform_int_distribution<> positionDist(0, pathLength);
     int startPosition = positionDist(package.randomEngine);
     const int maxTypes = (NUM_RESOURCES * 2);
 
     for (int i = 0; i < pathLength; i++) {
-        candidatePath = package.path;
         int modulatedInsertPosition = (i + startPosition) % pathLength;
-        candidatePath.insert(candidatePath.begin() + modulatedInsertPosition, 0);
+        package.path.insert(package.path.begin() + modulatedInsertPosition, 0);
 
         int startingUpgradeType = package.randomEngine() % (NUM_RESOURCES * 2);
         for (int upgradeType = 0; upgradeType < maxTypes; upgradeType++) {
 
             int modulatedUpgradeType = (upgradeType + startingUpgradeType) % maxTypes;
-            candidatePath[modulatedInsertPosition] = modulatedUpgradeType;
+            package.path[modulatedInsertPosition] = modulatedUpgradeType;
 
-            double testScore = evaluatePath(candidatePath, context);
+            double testScore = evaluatePath(package.path, context);
 
             if (testScore > package.score) {
-                if (outProposal) *outProposal = Proposal::Insert(modulatedInsertPosition, modulatedUpgradeType, testScore);
-                package.path.insert(package.path.begin() + modulatedInsertPosition, modulatedUpgradeType);
                 package.score = testScore;
                 context.logger.logImprovement("Insert", package.path, package.score);
                 return true;
             }
         }
+        package.path.erase(package.path.begin() + modulatedInsertPosition);
     }
     package.deadMoves.insert("Insert");
     return false;
 }
-bool tryRemoveUpgrade(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
+bool tryRemoveUpgrade(OptimizationPackage& package, SearchContext& context) {
 
     int pathLength = package.path.size() - 1;
-    thread_local vector<int> candidatePath;
 
     uniform_int_distribution<> swapDist(0, pathLength - 2);
     int startPos = swapDist(package.randomEngine);
 
     for (int i = 0; i < pathLength; i++) {
         int removePos = (i + startPos) % (pathLength);
+        int removedUpgrade = package.path[removePos];
 
-        candidatePath = package.path;
-        candidatePath.erase(candidatePath.begin() + removePos);
-        double testScore = evaluatePath(candidatePath, context);
+        package.path.erase(package.path.begin() + removePos);
+        double testScore = evaluatePath(package.path, context);
 
         if (testScore >= package.score) {
-            if (outProposal) *outProposal = Proposal::Remove(removePos, testScore);
             package.score = testScore;
-            package.path = candidatePath;
             context.logger.logImprovement("Remove", package.path, package.score);
             return true;
         }
+        package.path.insert(package.path.begin() + removePos, removedUpgrade);
     }
     package.deadMoves.insert("Remove");
     return false;
 
 }
-bool tryReplaceUpgrade(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
+bool tryReplaceUpgrade(OptimizationPackage& package, SearchContext& context) {
 
     int pathLength = package.path.size();
-    thread_local vector<int> candidatePath;
 
     uniform_int_distribution<> positionDist(0, pathLength - 1); // -1 because we access index, not insert
     int startPosition = positionDist(package.randomEngine);
     const int maxTypes = (NUM_RESOURCES * 2);
 
     for (int i = 0; i < pathLength; i++) {
-        // We do not resize the vector here
-        candidatePath = package.path; 
+
         int targetIndex = (i + startPosition) % pathLength;
-        
-        // Store original to ensure we are actually changing it
-        int originalType = candidatePath[targetIndex];
+        int originalType = package.path[targetIndex];
 
         int startingUpgradeType = package.randomEngine() % (NUM_RESOURCES * 2);
         
         for (int upgradeType = 0; upgradeType < maxTypes; upgradeType++) {
             int modulatedUpgradeType = (upgradeType + startingUpgradeType) % maxTypes;
 
-            // Don't replace an upgrade with itself
             if (modulatedUpgradeType == originalType) continue;
 
-            // PERFORM REPLACEMENT
-            candidatePath[targetIndex] = modulatedUpgradeType;
+            package.path[targetIndex] = modulatedUpgradeType;
 
-            double testScore = evaluatePath(candidatePath, context);
+            double testScore = evaluatePath(package.path, context);
 
             if (testScore > package.score) {
-                if (outProposal) *outProposal = Proposal::Replace(targetIndex, modulatedUpgradeType, testScore);
-                
-                // Commit change to package
-                package.path = candidatePath; 
                 package.score = testScore;
                 context.logger.logImprovement("Replace", package.path, package.score);
                 return true;
             }
         }
+        package.path[targetIndex] = originalType;
     }
     package.deadMoves.insert("Replace");
     return false;
 }
-bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
+bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context) {
 
     int pathLength = package.path.size() - 1;
-    thread_local vector<int> candidatePath;
-    candidatePath = package.path;
     double testScore;
 
     uniform_int_distribution<> swapDist(0, pathLength - 2);
@@ -559,93 +520,108 @@ bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context, Propo
             int i = (i2 + startPos) % (pathLength - 1);
             int j = (j2 + startPos) % (pathLength - 1);
 
-            if (candidatePath[i] == candidatePath[j]) continue;
-            swap(candidatePath[i], candidatePath[j]);
+            if (package.path[i] == package.path[j]) continue;
+            swap(package.path[i], package.path[j]);
 
-            testScore = evaluatePath(candidatePath, context);
+            testScore = evaluatePath(package.path, context);
 
             if (testScore > package.score) {
-                if (outProposal) *outProposal = Proposal::Swap(i, j, testScore);
-                package.path = candidatePath;
                 package.score = testScore;
                 context.logger.logImprovement("Swap", package.path, package.score);
                 return true;
             }
-
-            swap(candidatePath[i], candidatePath[j]);
+            swap(package.path[i], package.path[j]);
         }
     }
     package.deadMoves.insert("Swap");
     return false;
 }
-bool tryRotateSubsequences(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
+bool tryRotateSubsequences(OptimizationPackage& package, SearchContext& context) {
 
     int pathLength = package.path.size() - 1;
-    thread_local vector<int> candidatePath;
+    int maxIndex = pathLength - 1;
     double testScore;
 
-    uniform_int_distribution<> rotateDist(0, pathLength - 3);
-    int i = rotateDist(package.randomEngine);
-    uniform_int_distribution<> rotateDist2(i+2, pathLength - 1);
-    int j = rotateDist2(package.randomEngine);
+    // Pick a Random Subsequence Rage [rangeStart, rangeEnd]
+    // We need at least 3 items to perform meaningful rotation (2 items is just a swap)
+    uniform_int_distribution<> startDist(0, maxIndex - 2);
+    int rangeStart = startDist(package.randomEngine);
 
-    for (int k = 0; k < j-i; k++) {
-        candidatePath = package.path;
+    uniform_int_distribution<> endDist(rangeStart + 2, maxIndex);
+    int rangeEnd = endDist(package.randomEngine);
 
-        int offset = (k + 2) / 2;
-        bool isLeft = (k % 2 == 0); 
+    // Iterators for the range [first, last)
+    // Note: rangeEnd is inclusive index, so iterator is +1
+    auto rangeBeginIt = package.path.begin() + rangeStart;
+    auto rangeEndIt = package.path.begin() + rangeEnd + 1;
+    
+    int subSeqLength = rangeEnd - rangeStart;
+    for (int attempt = 0; attempt < subSeqLength; attempt++) {
 
-        if(isLeft)  rotate(candidatePath.begin() + i, candidatePath.begin() + i + offset, candidatePath.begin() + j + 1); // Left rotation
-        else        rotate(candidatePath.begin() + i, candidatePath.begin() + j - offset + 1, candidatePath.begin() + j + 1); // Right rotation
+        // Calculate shift logic to try small rotations first (Left 1, Right 1, Left 2, Right 2...)
+        int shiftAmount = (attempt + 2) / 2;
+        bool rotateLeft = (attempt % 2 == 0);
 
-        testScore = evaluatePath(candidatePath, context);
-        int rotationPos = isLeft ? i + offset: j - offset + 1;
+        if(rotateLeft)  rotate(rangeBeginIt, rangeBeginIt + shiftAmount, rangeEndIt); // Left rotation
+        else            rotate(rangeBeginIt, rangeEndIt - shiftAmount, rangeEndIt); // Right rotation
+
+        testScore = evaluatePath(package.path, context);
         if (testScore > package.score) {
-            if (outProposal) *outProposal = Proposal::Rotate(i, j + 1, rotationPos, testScore);
-            package.path = candidatePath;
             package.score = testScore;
             context.logger.logImprovement("Rotation", package.path, package.score);
             return true;
         }
+        //To undo Left(X), we Rotate Right(X)
+        //To undo Right(X), we Rotate Left(X)
+        if(rotateLeft)  rotate(rangeBeginIt, rangeEndIt - shiftAmount, rangeEndIt);
+        else            rotate(rangeBeginIt, rangeBeginIt + shiftAmount, rangeEndIt);
     }
     return false;
 }
-bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& context, Proposal* outProposal = nullptr) {
+bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& context) {
 
     int pathLength = package.path.size() - 1;
     int maxIndex = pathLength - 1;
-    thread_local vector<int> candidatePath;
     double testScore;
 
-    uniform_int_distribution<> rotateDist(0, maxIndex - 2);
-    int i = rotateDist(package.randomEngine);
+    uniform_int_distribution<> startOffsetDist(0, maxIndex - 2);
+    int startOffset = startOffsetDist(package.randomEngine);
 
-    for (int i2 = 0; i2 < maxIndex - 1; i2++){
-        int i3 = (i + i2) % (maxIndex - 1);
-        uniform_int_distribution<> rotateDist2(0, maxIndex-i3); 
-        int j = rotateDist2(package.randomEngine);
-        for (int j2 = 0; j2 < maxIndex - i3 - 1; j2++){ 
-            int j3 = i3 + 2 + ((j + j2) % (maxIndex - i3 - 1));
-            for (int k = 0; k < j3-i3; k++) {
-                candidatePath = package.path;
+    for (int i = 0; i < maxIndex - 1; i++){
+        int rangeStart = (rangeStart + i) % (maxIndex - 1);
 
-                int offset = (k + 2) / 2;
-                bool isLeft = (k % 2 == 0);
+        int remainingLength = maxIndex - (rangeStart + 2);
+        uniform_int_distribution<> endOffsetDist(0, max(0, remainingLength)); 
+        int endOffset = endOffsetDist(package.randomEngine);
+        for (int j = 0; j < remainingLength; j++){ 
+            int offsetJ = (endOffset + j) % (remainingLength + 1);
+            int rangeEnd = rangeStart + 2 + offsetJ;
 
-                if(isLeft)  rotate(candidatePath.begin() + i3, candidatePath.begin() + i3 + offset, candidatePath.begin() + j3 + 1);
-                else        rotate(candidatePath.begin() + i3, candidatePath.begin() + j3 - offset + 1, candidatePath.begin() + j3 + 1);
+            auto rangeBeginIt = package.path.begin() + rangeStart;
+            auto rangeEndIt = package.path.begin() + rangeEnd + 1;
+            int subSeqLength = rangeEnd - rangeStart;
 
-                double testScore = evaluatePath(candidatePath, context);
-                int rotationPos = isLeft ? i3 + offset: j3 - offset + 1;
+            for (int attempt = 0; attempt < subSeqLength; attempt++) {
+
+                // Calculate shift logic to try small rotations first (Left 1, Right 1, Left 2, Right 2...)
+                int shiftAmount = (attempt + 2) / 2;
+                bool rotateLeft = (attempt % 2 == 0);
+
+                if(rotateLeft)  rotate(rangeBeginIt, rangeBeginIt + shiftAmount, rangeEndIt); // Left rotation
+                else            rotate(rangeBeginIt, rangeEndIt - shiftAmount, rangeEndIt); // Right rotation
+
+                double testScore = evaluatePath(package.path, context);
+
                 if (testScore > package.score) {
-                    if (outProposal) *outProposal = Proposal::Rotate(i3, j3+1, rotationPos, testScore);
-                    package.path = candidatePath;
                     package.score = testScore;
                     context.logger.logImprovement("Rotation", package.path, package.score);
                     return true;
                 }
+                //To undo Left(X), we Rotate Right(X)
+                //To undo Right(X), we Rotate Left(X)
+                if(rotateLeft)  rotate(rangeBeginIt, rangeEndIt - shiftAmount, rangeEndIt);
+                else            rotate(rangeBeginIt, rangeBeginIt + shiftAmount, rangeEndIt);
             }
-
         }
     }
     package.deadMoves.insert("Rotate");
