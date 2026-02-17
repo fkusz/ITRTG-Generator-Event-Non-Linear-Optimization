@@ -8,9 +8,9 @@
 // Rehauled variable names, created classes, structs, added modularity, and cleaned up comments to make it easier to maintain for others 
 // Improve generalization to make it easier to update for different events;
 // Fixed a few non-critical bugs that were causing slower run-times or inadequate searching
+// Fixed rare bug where the score can become unbounded and skyrocket
 // (WIP) added the option for absolute timestamps for upgrade buy-times rather than timestamps relative to the start of the sim
 // (WIP) add parallelization for a isngle solution to produce a near-instant single solution
-// (WIP) rare bug where the score can become unbounded and skyrocket
 
 #include <iostream>
 #include <chrono>
@@ -31,40 +31,41 @@ const int EVENT_DURATION_DAYS = 14;
 const int EVENT_DURATION_HOURS = 0;
 const int EVENT_DURATION_MINUTES = 0;
 const int EVENT_DURATION_SECONDS = 0;
-const int UNLOCKED_PETS = 52;
-const int DLs = 1138;
+const int UNLOCKED_PETS = 56;
+const int DLs = 1348;
 
 vector<int> currentLevels = { 
-    // Production Levels
+    // Current Production Levels
     0, 1, 0,
     0, 0, 0,
     0, 0, 0,
-    0, 0, 0,   // Event Currency
+    0, 0, 0, 
     
-    // Speed Levels
+    // Current Speed Levels
     0, 0, 0,
     0, 0, 0,
     0, 0, 0,
-    0, 0, 0,   // Event Currency
+    0, 0, 0,
     
-    0             // Dummy placeholder. Keep 0
+    0 // Dummy placeholder. Keep 0
 };
 vector<double> resourceCounts = { 
+    // Current resource counts
     0, 500000, 0,    
     0, 0, 0,  
     0/((500.0+DLs)/5.0), 0, 0,
     0, 0, 0/(UNLOCKED_PETS/100.0)                        
 };
 
+// Your current upgrade path/the path you want to optimize. If left blank, a random path will be generated.
 vector<int> upgradePath = {};
-
 const bool isFullPath = false;
-const bool runOptimization = true;   // Set false to only see the results and timings of your path
-const bool endlessMode = false; //NOT WORKING YET-- Repeat optimization until *manually* stopped. Only save best result of all of them. Only works running locally
+const bool runOptimization = true; // Set false to only see the results and timings of your path
+const bool endlessMode = true; //Repeat optimization until *manually* stopped. Prints a path to file if it's betetr than every other previous path. Only works running locally
 
 // END USER SETTINGS ---------------------------------------------------------------------
 // ADVANCED SETTINGS ---------------------------------------------------------------------
-const int outputInterval = 3000; //How often results may be printed (milliseconds)
+const int outputInterval = 5000; //How often improvements are allowed to be printed (milliseconds)
 
 const double EVENT_CURRENCY_WEIGHT = 100e-5; 
 const double FREE_EXP_WEIGHT = 6e-5;     
@@ -705,8 +706,38 @@ int main() {
     upgradePath.reserve(500);
     vector<int> levelsCopy(currentLevels);
     double finalScore;
+    double UltraScore = 0;
     nameUpgrades();
     preprocessBusyTimes(busyTimesStart, busyTimesEnd);
+    ofstream MyFile;
+    MyFile.open("OptimizedPaths.txt", ios::app);
+    while (endlessMode) {
+        if (upgradePath.empty()) {          
+            upgradePath = generateRandomPath();
+        }
+
+        if (isFullPath) {
+            levelsCopy = adjustFullPath(levelsCopy);
+        }
+
+        double initial_score = calculateFinalPath(upgradePath);
+        random_device seed;
+        mt19937 randomEngine(seed());
+        Logger logger(outputInterval);
+        SearchContext context{logger, resourceCounts, currentLevels};
+        OptimizationPackage package = {upgradePath, initial_score, move(randomEngine)};
+        optimizeUpgradePath(package, context);
+        upgradePath = move(package.path);
+        
+        finalScore =calculateFinalPath(upgradePath);
+        if (finalScore >= UltraScore) {
+            UltraScore = finalScore;
+            printVector(upgradePath, MyFile);
+            MyFile << endl;
+            MyFile << "Final score: " << finalScore << endl << endl;
+        }
+        upgradePath = {};
+    }
 
     if (upgradePath.empty()) {          
         upgradePath = generateRandomPath();
