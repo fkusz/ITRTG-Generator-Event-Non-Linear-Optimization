@@ -80,10 +80,10 @@ const vector<double> busyTimesEnd =     {}; // The first hours, relative to the 
 constexpr array<const char*, 12> resourceNames = {"Love_Bow", "Love_Arrows", "Chocolate", "Cubear", "Rose", "Cake", "FREE_EXP", "Love_Bear", "PET_STONES", "RESEARCH_POINTS", "EVENT_CURRENCY", "GROWTH"};
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
+constexpr int NUM_UPGRADES = NUM_RESOURCES * 2;
 const int MAX_LEVEL = 71; //Pretend there's a max level for constructing lookup tables. Any number that won't practically be reached is fine to use.
 const int MAX_SPEED_LEVEL = 11; // 0-10 is 11 distinct "levels"
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
-
 map<int, string> upgradeNames;
 array<double, TOTAL_SECONDS> timeNeededSeconds{};
 
