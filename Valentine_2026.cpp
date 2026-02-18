@@ -80,11 +80,45 @@ const vector<double> busyTimesEnd =     {}; // The first hours, relative to the 
 constexpr array<const char*, 12> resourceNames = {"Love_Bow", "Love_Arrows", "Chocolate", "Cubear", "Rose", "Cake", "FREE_EXP", "Love_Bear", "PET_STONES", "RESEARCH_POINTS", "EVENT_CURRENCY", "GROWTH"};
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
+const int MAX_LEVEL = 71; //Pretend there's a max level for constructing lookup tables. Any number that won't practically be reached is fine to use.
+const int MAX_SPEED_LEVEL = 11; // 0-10 is 11 distinct "levels"
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
 
 map<int, string> upgradeNames;
 array<double, TOTAL_SECONDS> timeNeededSeconds{};
 
+// Rate Cache: [ResourceID][Level][SpeedLevel]
+// Cost Cache: [UpgradeID][Current Level]
+// We will precompute the production rates for each resource at each level and speed to speed up the simulation.
+double RATE_CACHE[NUM_RESOURCES][MAX_LEVEL][MAX_SPEED_LEVEL];
+
+constexpr double cycleTimeMultiplier[12] = {
+        1.0 / 3.0,
+        1.0,
+        1.0 / 3.0,
+        1.0 / 5.0,
+        1.0 / 5.0,
+        1.0 / 5.0,
+        1.0 / 2500.0,
+        1.0 / 5.0,
+        1.0 / 1200.0,
+        1.0 / 1200.0,
+        1.0 / 5000.0,
+        1.0 / 1800.0 
+};
+    constexpr double speedMultipliers[11] = {
+        1.0,
+        1.25,
+        1.5625,
+        1.953125,
+        2.44140625,
+        3.0517578125,
+        3.814697265625,
+        4.76837158203125,
+        5.960464477539063,
+        7.450580596923828,
+        9.313225746154785
+};
 // END PROGRAM SETTINGS -----------------------------------------------------------------
 // UTILITY FUNCTIONS --------------------------------------------------------------------
 template <typename T>
@@ -137,7 +171,11 @@ struct OptimizationPackage {
     mt19937 randomEngine;
     unordered_set<string> deadMoves = {};
 };
-
+struct CostEntry {
+    int resourceIdx; // The ingredient (0-11)
+    double amount;   // The cost
+};
+vector<CostEntry> COST_CACHE[NUM_UPGRADES+1][MAX_LEVEL];
 void nameUpgrades() {
     for (int i = 0; i < NUM_RESOURCES; i++) {
         upgradeNames[i] = string(resourceNames[i]) + "_Level";
@@ -180,6 +218,60 @@ void printFormattedResults(vector<int>& path, vector<int>& simulationLevels, vec
         << " (" << simulationResources[11] << " levels * cycles)" << "\n";
     cout << "Score: " << finalScore << "\n\n";
 }
+void cacheProductionRates() {
+    for (int res = 0; res < NUM_RESOURCES; res++) {
+        for (int lvl = 0; lvl < MAX_LEVEL; lvl++) {
+            for (int spd = 0; spd < MAX_SPEED_LEVEL; spd++) {
+                double rate = (double)lvl * cycleTimeMultiplier[res] * speedMultipliers[spd];
+                RATE_CACHE[res][lvl][spd] = rate;
+            }
+        }
+    }
+}
+vector<double> initializeProductionRates() {
+    vector<double> rates(NUM_RESOURCES);
+    for (int res = 0; res < NUM_RESOURCES; res++) {
+        rates[res] = RATE_CACHE[res][currentLevels[res]][currentLevels[res + NUM_RESOURCES]];
+    }
+    return rates;
+}
+void preprocessCosts() {
+    for (int type = 0; type < NUM_UPGRADES; type++) {
+        int resourceType = type % NUM_RESOURCES;
+        if (type == NUM_RESOURCES * 2) resourceType = -1; // Completion upgrade
+
+        for (int lvl = 0; lvl < MAX_LEVEL; lvl++) {
+            double nextLvl = (double)(lvl + 1);
+            double baseCost = nextLvl * nextLvl * nextLvl * 100.0;
+            if (type >= NUM_RESOURCES) baseCost *= 2.5;
+
+            // Define dependencies (Temporary vector to hold multipliers)
+            vector<pair<int, double>> dependencies; 
+            
+            switch (resourceType) {
+                case 0:  dependencies = {{1, 2.0}}; break;
+                case 1:  dependencies = {{1, 1.0}}; break;
+                case 2:  dependencies = {{1, 2.0}}; break;
+                case 3:  dependencies = {{0, 1.5}, {1, 1.5}}; break;
+                case 4:  dependencies = {{1, 2.0}}; break;
+                case 5:  dependencies = {{1, 1.5}, {2, 1.5}}; break;
+                case 6:  dependencies = {{3, 5.0}}; break;
+                case 7:  dependencies = {{1, 1.5}, {4, 1.5}}; break;
+                case 8:  dependencies = {{5, 5.0}}; break;
+                case 9:  dependencies = {{3, 2.5}, {4, 2.5}}; break;
+                case 10: dependencies = {{3, 3.0}, {4, 3.0}, {5, 3.0}}; break;
+                case 11: dependencies = {{5, 2.5}, {7, 2.5}}; break;
+                default: break; // Case -1 or others
+            }
+
+            // Fill the cache
+            for (auto& dep : dependencies) {
+                COST_CACHE[type][lvl].push_back(CostEntry{dep.first, baseCost * dep.second});
+            }
+        }
+    }
+}
+
 void preprocessBusyTimes(const vector<double>& startHours, const vector<double>& endHours) {
     for (size_t i = 0; i < startHours.size(); ++i) {
         int startSec = static_cast<int>(startHours[i] * 3600.0);
@@ -213,120 +305,22 @@ void readoutUpgrade(int upgradeType, vector<int>& levels, int elapsedSeconds) {
 }
 // END UTILITY FUNCTIONS ----------------------------------------------------------------
 // ALGORITHM FUNCTIONS ------------------------------------------------------------------
-double performUpgrade(vector<int>& levels, vector<double>& resources, int upgradeType, double& remainingTime) {
-
-    constexpr double cycleTimeMultiplier[12] = {
-        1.0 / 3.0,
-        1.0,
-        1.0 / 3.0,
-        1.0 / 5.0,
-        1.0 / 5.0,
-        1.0 / 5.0,
-        1.0 / 2500.0,
-        1.0 / 5.0,
-        1.0 / 1200.0,
-        1.0 / 1200.0,
-        1.0 / 5000.0,
-        1.0 / 1800.0 
-    };
-    constexpr double speedMultipliers[11] = {
-        1.0,
-        1.25,
-        1.5625,
-        1.953125,
-        2.44140625,
-        3.0517578125,
-        3.814697265625,
-        4.76837158203125,
-        5.960464477539063,
-        7.450580596923828,
-        9.313225746154785
-    };
+double performUpgrade(vector<int>& levels, vector<double>& resources, vector<double>& currentRates, int upgradeType, double& remainingTime) {
     
-    int resourceType = upgradeType % NUM_RESOURCES;
-    if (upgradeType == NUM_RESOURCES * 2) {
-        resourceType = -1;
-    }
+    int currentLevel = levels[upgradeType];
     
-    int newLevel = levels[upgradeType] + 1;
-    double baseCost = newLevel * newLevel * newLevel * 100.0;
-
-    if (upgradeType >= NUM_RESOURCES) baseCost *= 2.5;
-
-    
-    double cost[12] = {};
-    double productionRates[12] = {};
-    
-    switch (resourceType) {
-        case 0:
-            cost[1] = baseCost * 2;
-            break;
-        case 1:
-            cost[1] = baseCost;
-            break;
-        case 2:
-            cost[1] = baseCost * 2;
-            break;
-        case 3:
-            cost[0] = baseCost * 1.5;
-            cost[1] = baseCost * 1.5;
-            break;
-        case 4:
-            cost[1] = baseCost * 2;
-            break;
-        case 5:
-            cost[1] = baseCost * 1.5;
-            cost[2] = baseCost * 1.5;
-            break;
-        case 6:
-            cost[3] = baseCost * 5;
-            break;
-        case 7:
-            cost[1] = baseCost * 1.5;
-            cost[4] = baseCost * 1.5;
-            break;
-        case 8:
-            cost[5] = baseCost * 5;
-            break;
-        case 9:
-            cost[3] = baseCost * 2.5;
-            cost[4] = baseCost * 2.5;
-            break;
-        case 10:
-            cost[3] = baseCost * 3;
-            cost[4] = baseCost * 3;
-            cost[5] = baseCost * 3;
-            break;
-        case 11:
-            cost[5] = baseCost * 2.5;
-            cost[7] = baseCost * 2.5;
-            break;
-    }
-    
-    productionRates[0] = levels[0] * cycleTimeMultiplier[0] * speedMultipliers[levels[12]]; // Turning this into a loop worsenes performance
-    productionRates[1] = levels[1] * cycleTimeMultiplier[1] * speedMultipliers[levels[13]]; 
-    productionRates[2] = levels[2] * cycleTimeMultiplier[2] * speedMultipliers[levels[14]];
-    productionRates[3] = levels[3] * cycleTimeMultiplier[3] * speedMultipliers[levels[15]];
-    productionRates[4] = levels[4] * cycleTimeMultiplier[4] * speedMultipliers[levels[16]];
-    productionRates[5] = levels[5] * cycleTimeMultiplier[5] * speedMultipliers[levels[17]];
-    productionRates[6] = levels[6] * cycleTimeMultiplier[6] * speedMultipliers[levels[18]];
-    productionRates[7] = levels[7] * cycleTimeMultiplier[7] * speedMultipliers[levels[19]];
-    productionRates[8] = levels[8] * cycleTimeMultiplier[8] * speedMultipliers[levels[20]];
-    productionRates[9] = levels[9] * cycleTimeMultiplier[9] * speedMultipliers[levels[21]];
-    productionRates[10] = levels[10] * cycleTimeMultiplier[10] * speedMultipliers[levels[22]];
-    productionRates[11] = levels[11] * cycleTimeMultiplier[11] * speedMultipliers[levels[23]];
-    
-    // Calculate time needed for the upgrade
+    const vector<CostEntry>& costs = COST_CACHE[upgradeType][currentLevel];
     double timeNeeded = 0;
     double timeElapsed = TOTAL_SECONDS - remainingTime;
-    for (int i = 0; i < NUM_RESOURCES; i++) {
-        double neededResources = cost[i] - resources[i];
-        if (neededResources <= 0) continue;
-        if (productionRates[i] == 0) {
+    for (const auto& entry : costs) {
+        double neededResource = entry.amount - resources[entry.resourceIdx];
+        double rate = RATE_CACHE[entry.resourceIdx][levels[entry.resourceIdx]][levels[entry.resourceIdx + NUM_RESOURCES]];
+        if (neededResource <= 0) continue;
+        if (rate == 0) {
             timeNeeded = INFINITY_VALUE;
             break;
         }
-        timeNeeded = max(timeNeeded, neededResources / productionRates[i]);
+        timeNeeded = max(timeNeeded, neededResource / rate);
     }
 
     int busyLookupIndex = static_cast<int>(timeElapsed + timeNeeded);
@@ -336,45 +330,43 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, int upgrad
 
     if (timeNeeded >= remainingTime || upgradeType == (2 * NUM_RESOURCES)) {
         timeNeeded = remainingTime;
-        resources[0] += productionRates[0] * timeNeeded;
-        resources[1] += productionRates[1] * timeNeeded; 
-        resources[2] += productionRates[2] * timeNeeded;
-        resources[3] += productionRates[3] * timeNeeded;
-        resources[4] += productionRates[4] * timeNeeded;
-        resources[5] += productionRates[5] * timeNeeded;
-        resources[6] += productionRates[6] * timeNeeded;
-        resources[7] += productionRates[7] * timeNeeded;
-        resources[8] += productionRates[8] * timeNeeded;
-        resources[9] += productionRates[9] * timeNeeded;
-        resources[10] += productionRates[10] * timeNeeded;
-        resources[11] += productionRates[11] * timeNeeded;
-        return timeNeeded;
     }
 
-    resources[0] += productionRates[0] * timeNeeded - cost[0];
-    resources[1] += productionRates[1] * timeNeeded - cost[1];
-    resources[2] += productionRates[2] * timeNeeded - cost[2];
-    resources[3] += productionRates[3] * timeNeeded - cost[3];
-    resources[4] += productionRates[4] * timeNeeded - cost[4];
-    resources[5] += productionRates[5] * timeNeeded - cost[5];
-    resources[6] += productionRates[6] * timeNeeded - cost[6];
-    resources[7] += productionRates[7] * timeNeeded - cost[7];
-    resources[8] += productionRates[8] * timeNeeded - cost[8];
-    resources[9] += productionRates[9] * timeNeeded - cost[9];
-    resources[10] += productionRates[10] * timeNeeded - cost[10];
-    resources[11] += productionRates[11] * timeNeeded - cost[11];
+    resources[0] += currentRates[0] * timeNeeded;
+    resources[1] += currentRates[1] * timeNeeded;
+    resources[2] += currentRates[2] * timeNeeded;
+    resources[3] += currentRates[3] * timeNeeded;
+    resources[4] += currentRates[4] * timeNeeded;
+    resources[5] += currentRates[5] * timeNeeded;
+    resources[6] += currentRates[6] * timeNeeded;
+    resources[7] += currentRates[7] * timeNeeded;
+    resources[8] += currentRates[8] * timeNeeded;
+    resources[9] += currentRates[9] * timeNeeded;
+    resources[10] += currentRates[10] * timeNeeded;
+    resources[11] += currentRates[11] * timeNeeded;
 
-    levels[upgradeType]++;
+    if (timeNeeded < remainingTime) {
+        for (const auto & entry : costs) {
+            resources[entry.resourceIdx] -= entry.amount;
+        }
+        levels[upgradeType]++;
+        int resChanged = upgradeType % NUM_RESOURCES;
+        int lvl = levels[resChanged];
+        int spd = levels[resChanged + NUM_RESOURCES];
+        currentRates[resChanged] = RATE_CACHE[resChanged][lvl][spd];
+    }
     
     return timeNeeded;
 }
 double simulateUpgradePath(vector<int>& path, vector<int>& levels, vector<double>& resources, bool display = false) {
-    thread_local double time;
-    time = TOTAL_SECONDS;
+    double time = TOTAL_SECONDS;
+    thread_local vector<double> currentRates;
+    currentRates = initializeProductionRates();
+
     for (auto upgradeType : path) {
         if (time < 1e-3) return 0;
         if (upgradeType >= NUM_RESOURCES && levels[upgradeType] >= 10) return INFINITY_VALUE;
-        double timeTaken = performUpgrade(levels, resources, upgradeType, time);
+        double timeTaken = performUpgrade(levels, resources, currentRates, upgradeType, time);
         time -= timeTaken;
         
         if (display) {
@@ -588,7 +580,7 @@ bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& cont
     int startOffset = startOffsetDist(package.randomEngine);
 
     for (int i = 0; i < maxIndex - 1; i++){
-        int rangeStart = (rangeStart + i) % (maxIndex - 1);
+        int rangeStart = (startOffset + i) % (maxIndex - 1);
 
         int remainingLength = maxIndex - (rangeStart + 2);
         uniform_int_distribution<> endOffsetDist(0, max(0, remainingLength)); 
@@ -685,6 +677,8 @@ int main() {
     double UltraScore = 0;
     nameUpgrades();
     preprocessBusyTimes(busyTimesStart, busyTimesEnd);
+    cacheProductionRates();
+    preprocessCosts();
     ofstream MyFile;
     MyFile.open("OptimizedPaths.txt", ios::app);
     while (endlessMode) {
@@ -733,7 +727,7 @@ int main() {
         optimizeUpgradePath(package, context);
         upgradePath = move(package.path);
     }
-    finalScore =calculateFinalPath(upgradePath);
+    finalScore = calculateFinalPath(upgradePath);
     
     return 0;
 }   
