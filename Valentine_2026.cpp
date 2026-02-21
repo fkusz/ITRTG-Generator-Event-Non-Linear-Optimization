@@ -61,7 +61,7 @@ vector<double> resourceCounts = {
 vector<int> upgradePath = {};
 const bool isFullPath = false;
 const bool runOptimization = true; // Set false to only see the results and timings of your path
-const bool endlessMode = true; //Repeat optimization until *manually* stopped. Prints a path to file if it's betetr than every other previous path. Only works running locally
+const bool endlessMode = true; //Repeat optimization until *manually* stopped. Prints a path to file if it's better than every other previous path. Only works running locally
 
 // END USER SETTINGS ---------------------------------------------------------------------
 // ADVANCED SETTINGS ---------------------------------------------------------------------
@@ -184,7 +184,7 @@ void nameUpgrades() {
     upgradeNames[24] = "Complete";
 }
 vector <int> adjustFullPath(vector<int>& levels){ // This is not thread-safe
-    levels[1]--; // Adjust first level because it always starts at 1
+    levels[1]--; // Reduce first level because it always starts at 1
     auto it = upgradePath.begin();
     while (it != upgradePath.end()) {
         if (levels[*it] > 0) {
