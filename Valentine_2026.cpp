@@ -34,7 +34,7 @@ const int EVENT_DURATION_SECONDS = 0;
 const int UNLOCKED_PETS = 56;
 const int DLs = 1348;
 
-vector<int> currentLevels = { 
+array<int, 25> currentLevels = { 
     // Current Production Levels
     0, 1, 0,
     0, 0, 0,
@@ -49,7 +49,7 @@ vector<int> currentLevels = {
     
     0 // Dummy placeholder. Keep 0
 };
-vector<double> resourceCounts = { 
+array<double, 12> resourceCounts = { 
     // Current resource counts
     0, 500000, 0,    
     0, 0, 0,  
@@ -85,7 +85,7 @@ const int MAX_LEVEL = 71; //Pretend there's a max level for constructing lookup 
 const int MAX_SPEED_LEVEL = 11; // 0-10 is 11 distinct "levels"
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
 map<int, string> upgradeNames;
-array<double, TOTAL_SECONDS> timeNeededSeconds{};
+array<double, TOTAL_SECONDS + 1> timeNeededSeconds{};
 
 // Rate Cache: [ResourceID][Level][SpeedLevel]
 // Cost Cache: [UpgradeID][Current Level]
@@ -121,9 +121,8 @@ constexpr double cycleTimeMultiplier[12] = {
 };
 // END PROGRAM SETTINGS -----------------------------------------------------------------
 // UTILITY FUNCTIONS --------------------------------------------------------------------
-template <typename T>
-void printVector(vector<T>& x, ostream& out = cout) {
-    for (auto item : x) out << item << ",";
+void printVector(const auto& x, ostream& out = cout) {
+    for (const auto& item : x) out << item << ",";
 }
 class NullBuffer : public std::streambuf {
 public:
@@ -162,8 +161,8 @@ public:
 };
 struct SearchContext {
     Logger logger;
-    const vector<double>& resources;
-    const vector<int>& levels;
+    const array<double, NUM_RESOURCES>& resources;
+    const array<int, NUM_UPGRADES + 1>& levels;
 };
 struct OptimizationPackage {
     vector<int> path;
@@ -175,7 +174,12 @@ struct CostEntry {
     int resourceIdx; // The ingredient (0-11)
     double amount;   // The cost
 };
-vector<CostEntry> COST_CACHE[NUM_UPGRADES+1][MAX_LEVEL];
+struct CostList {
+    array<CostEntry, 3> entries;
+    int count = 0;
+};
+
+CostList COST_CACHE[NUM_UPGRADES+1][MAX_LEVEL];
 void nameUpgrades() {
     for (int i = 0; i < NUM_RESOURCES; i++) {
         upgradeNames[i] = string(resourceNames[i]) + "_Level";
@@ -183,7 +187,7 @@ void nameUpgrades() {
     }
     upgradeNames[24] = "Complete";
 }
-vector <int> adjustFullPath(vector<int>& levels){ // This is not thread-safe
+array<int,NUM_UPGRADES + 1> adjustFullPath(array<int,NUM_UPGRADES + 1>& levels){ // This is not thread-safe
     levels[1]--; // Reduce first level because it always starts at 1
     auto it = upgradePath.begin();
     while (it != upgradePath.end()) {
@@ -196,7 +200,7 @@ vector <int> adjustFullPath(vector<int>& levels){ // This is not thread-safe
     }
     return levels;
 }
-void printFormattedResults(vector<int>& path, vector<int>& simulationLevels, vector<double>& simulationResources, double finalScore) {
+void printFormattedResults(vector<int>& path, array<int, NUM_UPGRADES + 1>& simulationLevels, array<double, NUM_RESOURCES>& simulationResources, double finalScore) {
     cout << "Upgrade Path: \n{";
     printVector(path);
     cout << "}\n";
@@ -228,26 +232,35 @@ void cacheProductionRates() {
         }
     }
 }
-vector<double> initializeProductionRates() {
-    vector<double> rates(NUM_RESOURCES);
+array<double, NUM_RESOURCES> initializeProductionRates() {
+    array<double, NUM_RESOURCES> rates;
     for (int res = 0; res < NUM_RESOURCES; res++) {
         rates[res] = RATE_CACHE[res][currentLevels[res]][currentLevels[res + NUM_RESOURCES]];
     }
     return rates;
 }
 void preprocessCosts() {
-    for (int type = 0; type < NUM_UPGRADES; type++) {
+    for (int type = 0; type <= NUM_UPGRADES; type++) { 
         int resourceType = type % NUM_RESOURCES;
         if (type == NUM_RESOURCES * 2) resourceType = -1; // Completion upgrade
 
         for (int lvl = 0; lvl < MAX_LEVEL; lvl++) {
+            
+            CostList& costList = COST_CACHE[type][lvl];
+            costList.count = 0;
+
+            // Give the completion upgrade an impossible cost to ensure it ends performUpgrade()
+            if (resourceType == -1) {
+                costList.entries[0] = CostEntry{1, INFINITY_VALUE};
+                costList.count = 1;
+                continue;
+            }
+
             double nextLvl = (double)(lvl + 1);
             double baseCost = nextLvl * nextLvl * nextLvl * 100.0;
             if (type >= NUM_RESOURCES) baseCost *= 2.5;
 
-            // Define dependencies (Temporary vector to hold multipliers)
             vector<pair<int, double>> dependencies; 
-            
             switch (resourceType) {
                 case 0:  dependencies = {{1, 2.0}}; break;
                 case 1:  dependencies = {{1, 1.0}}; break;
@@ -261,13 +274,12 @@ void preprocessCosts() {
                 case 9:  dependencies = {{3, 2.5}, {4, 2.5}}; break;
                 case 10: dependencies = {{3, 3.0}, {4, 3.0}, {5, 3.0}}; break;
                 case 11: dependencies = {{5, 2.5}, {7, 2.5}}; break;
-                default: break; // Case -1 or others
             }
 
-            // Fill the cache
-            for (auto& dep : dependencies) {
-                COST_CACHE[type][lvl].push_back(CostEntry{dep.first, baseCost * dep.second});
+            for (size_t i = 0; i < dependencies.size(); ++i) {
+                costList.entries[i] = CostEntry{dependencies[i].first, baseCost * dependencies[i].second};
             }
+            costList.count = static_cast<int>(dependencies.size());
         }
     }
 }
@@ -284,11 +296,6 @@ void preprocessBusyTimes(const vector<double>& startHours, const vector<double>&
         }
     }
 }
-inline double additionalTimeNeeded(double expectedTimeSeconds) {
-    int idx = static_cast<int>(expectedTimeSeconds);
-    if (idx >= TOTAL_SECONDS) return 0.0;
-    return timeNeededSeconds[idx];
-}
 vector <int> generateRandomPath(int length = TOTAL_SECONDS/3600) {
     vector<int> randomPath = {};
     for (int i = 0; i < length; i++) {
@@ -297,7 +304,7 @@ vector <int> generateRandomPath(int length = TOTAL_SECONDS/3600) {
     randomPath.push_back(NUM_RESOURCES * 2);
     return randomPath;
 }
-void readoutUpgrade(int upgradeType, vector<int>& levels, int elapsedSeconds) {
+void readoutUpgrade(int upgradeType, array<int,NUM_UPGRADES + 1>& levels, int elapsedSeconds) {
     cout << upgradeNames[upgradeType] << " " << levels[upgradeType] 
         << " " << (int)elapsedSeconds/24/3600 << " days, " 
         << (int)elapsedSeconds/3600%24 << " hours, " 
@@ -305,32 +312,34 @@ void readoutUpgrade(int upgradeType, vector<int>& levels, int elapsedSeconds) {
 }
 // END UTILITY FUNCTIONS ----------------------------------------------------------------
 // ALGORITHM FUNCTIONS ------------------------------------------------------------------
-double performUpgrade(vector<int>& levels, vector<double>& resources, vector<double>& currentRates, int upgradeType, double& remainingTime) {
+double performUpgrade(array<int, NUM_UPGRADES + 1>& levels, 
+                      array<double, NUM_RESOURCES>& resources, 
+                      array<double, NUM_RESOURCES>& currentRates, 
+                      int upgradeType, 
+                      double& remainingTime) {
     
     int currentLevel = levels[upgradeType];
+    const CostList& costList = COST_CACHE[upgradeType][currentLevel];
     
-    const vector<CostEntry>& costs = COST_CACHE[upgradeType][currentLevel];
     double timeNeeded = 0;
     double timeElapsed = TOTAL_SECONDS - remainingTime;
-    for (const auto& entry : costs) {
+    
+    // Flattened cache loop - Zero heap indirection!
+    for (int i = 0; i < costList.count; ++i) {
+        const CostEntry& entry = costList.entries[i];
         double neededResource = entry.amount - resources[entry.resourceIdx];
-        double rate = RATE_CACHE[entry.resourceIdx][levels[entry.resourceIdx]][levels[entry.resourceIdx + NUM_RESOURCES]];
         if (neededResource <= 0) continue;
+        double rate = RATE_CACHE[entry.resourceIdx][levels[entry.resourceIdx]][levels[entry.resourceIdx + NUM_RESOURCES]];
         if (rate == 0) {
-            timeNeeded = INFINITY_VALUE;
+            timeNeeded = remainingTime;
             break;
         }
         timeNeeded = max(timeNeeded, neededResource / rate);
     }
 
+    timeNeeded = min(timeNeeded, remainingTime);
     int busyLookupIndex = static_cast<int>(timeElapsed + timeNeeded);
-    if (0 <= busyLookupIndex && busyLookupIndex < TOTAL_SECONDS){
-        timeNeeded += timeNeededSeconds[busyLookupIndex];
-    };
-
-    if (timeNeeded >= remainingTime || upgradeType == (2 * NUM_RESOURCES)) {
-        timeNeeded = remainingTime;
-    }
+    timeNeeded += timeNeededSeconds[busyLookupIndex];
 
     resources[0] += currentRates[0] * timeNeeded;
     resources[1] += currentRates[1] * timeNeeded;
@@ -346,7 +355,8 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, vector<dou
     resources[11] += currentRates[11] * timeNeeded;
 
     if (timeNeeded < remainingTime) {
-        for (const auto & entry : costs) {
+        for (int i = 0; i < costList.count; ++i) {
+            const CostEntry& entry = costList.entries[i];
             resources[entry.resourceIdx] -= entry.amount;
         }
         levels[upgradeType]++;
@@ -358,9 +368,9 @@ double performUpgrade(vector<int>& levels, vector<double>& resources, vector<dou
     
     return timeNeeded;
 }
-double simulateUpgradePath(vector<int>& path, vector<int>& levels, vector<double>& resources, bool display = false) {
+double simulateUpgradePath(vector<int>& path, array<int,NUM_UPGRADES + 1>& levels, array<double, NUM_RESOURCES>& resources, bool display = false) {
     double time = TOTAL_SECONDS;
-    thread_local vector<double> currentRates;
+    thread_local array<double, NUM_RESOURCES> currentRates;
     currentRates = initializeProductionRates();
 
     for (auto upgradeType : path) {
@@ -376,7 +386,7 @@ double simulateUpgradePath(vector<int>& path, vector<int>& levels, vector<double
     }
     return time;
 }
-double calculateScore(vector<double>& resources, bool display = false) {
+double calculateScore(array<double, NUM_RESOURCES>& resources, bool display = false) {
     double score = 0;
 
     for (int i = 0; i < NUM_RESOURCES; i++) {
@@ -391,17 +401,17 @@ double calculateScore(vector<double>& resources, bool display = false) {
     
     return score;
 }
-double evaluatePath(vector<int>& path, const SearchContext& context){
-    thread_local vector<double> testResources = context.resources;
-    thread_local vector<int> testLevels = context.levels;
+double evaluatePath(vector<int>& path, const SearchContext& context) {
+    thread_local array<double, NUM_RESOURCES> testResources;
+    thread_local array<int, NUM_UPGRADES + 1> testLevels;
     testResources = context.resources;
     testLevels = context.levels;
     simulateUpgradePath(path, testLevels, testResources);
     return calculateScore(testResources);
 }
 double calculateFinalPath(vector<int>& path){
-    vector<int>     simulationLevels(currentLevels);
-    vector<double>  simulationResources(resourceCounts);
+    array<int, NUM_UPGRADES + 1>     simulationLevels(currentLevels);
+    array<double, NUM_RESOURCES>  simulationResources(resourceCounts);
 
     simulateUpgradePath(path, simulationLevels, simulationResources, true);
     double simulationScore = calculateScore(simulationResources);
@@ -628,6 +638,7 @@ void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, c
     int noImprovementStreak = 0;
     int InsertCount = 0, RemoveCount = 0, SwapCount = 0, RotationCount = 0, ReplaceCount = 0;
     double InsertRatio = 0, RemoveRatio = 0, SwapRatio = 0, RotationRatio = 0, ReplaceRatio = 0;
+    auto benchmarkStart = chrono::high_resolution_clock::now();
     while (noImprovementStreak < maxIterations) {
         iterationCount++;
         bool improved = false;
@@ -653,26 +664,35 @@ void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, c
         else noImprovementStreak++;
     }
     //Data collection for analysis. Realistically needs its own manager.
-    InsertRatio = (double)InsertCount / iterationCount;
-    ReplaceRatio = (double)ReplaceCount / iterationCount;
-    RemoveRatio = (double)RemoveCount / iterationCount;
-    SwapRatio = (double)SwapCount / iterationCount;
-    RotationRatio = (double)RotationCount / iterationCount;
-    cout << "Insert Count: " << InsertCount << "\n";
-    cout << "Replace Count: " << ReplaceCount << "\n";
-    cout << "Remove Count: " << RemoveCount << "\n";
-    cout << "Swap Count: " << SwapCount << "\n";
-    cout << "Rotation Count: " << RotationCount << "\n";
-    cout << "Insert ratio: " << InsertRatio << "\n";
-    cout << "Replace ratio: " << ReplaceRatio << "\n";
-    cout << "Remove ratio: " << RemoveRatio << "\n";
-    cout << "Swap ratio: " << SwapRatio << "\n";
-    cout << "Rotation ratio: " << RotationRatio << "\n";
+    auto benchmarkEnd = chrono::high_resolution_clock::now();
+    double elapsedSeconds = chrono::duration<double>(benchmarkEnd - benchmarkStart).count();
+    int totalEvaluations = InsertCount + ReplaceCount + RemoveCount + SwapCount + RotationCount; 
+    
+    cout << "\n--- BENCHMARK RESULTS ---\n";
+    cout << "Time elapsed: " << elapsedSeconds << " seconds\n";
+    cout << "Total loop iterations: " << iterationCount << "\n";
+    cout << "Throughput: " << (iterationCount / elapsedSeconds) << " iterations/second\n";
+    cout << "-------------------------\n\n";
+    // InsertRatio = (double)InsertCount / iterationCount;
+    // ReplaceRatio = (double)ReplaceCount / iterationCount;
+    // RemoveRatio = (double)RemoveCount / iterationCount;
+    // SwapRatio = (double)SwapCount / iterationCount;
+    // RotationRatio = (double)RotationCount / iterationCount;
+    // cout << "Insert Count: " << InsertCount << "\n";
+    // cout << "Replace Count: " << ReplaceCount << "\n";
+    // cout << "Remove Count: " << RemoveCount << "\n";
+    // cout << "Swap Count: " << SwapCount << "\n";
+    // cout << "Rotation Count: " << RotationCount << "\n";
+    // cout << "Insert ratio: " << InsertRatio << "\n";
+    // cout << "Replace ratio: " << ReplaceRatio << "\n";
+    // cout << "Remove ratio: " << RemoveRatio << "\n";
+    // cout << "Swap ratio: " << SwapRatio << "\n";
+    // cout << "Rotation ratio: " << RotationRatio << "\n";
 }
 
 int main() {
     upgradePath.reserve(500);
-    vector<int> levelsCopy(currentLevels);
+    array<int, NUM_UPGRADES + 1> levelsCopy(currentLevels);
     double finalScore;
     double UltraScore = 0;
     nameUpgrades();
