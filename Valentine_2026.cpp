@@ -31,8 +31,8 @@ const int EVENT_DURATION_DAYS = 14;
 const int EVENT_DURATION_HOURS = 0;
 const int EVENT_DURATION_MINUTES = 0;
 const int EVENT_DURATION_SECONDS = 0;
-const int UNLOCKED_PETS = 56;
-const int DLs = 1348;
+const int UNLOCKED_PETS = #ENTER_YOUR_UNLOCKED_PETS#;
+const int DLs = #ENTER_YOUR_DUNGEON_LEVELS#;
 
 array<int, 25> currentLevels = { 
     // Current Production Levels
@@ -51,10 +51,10 @@ array<int, 25> currentLevels = {
 };
 array<double, 12> resourceCounts = { 
     // Current resource counts
-    0, 500000, 0,    
-    0, 0, 0,  
+    0, 500000, 0, 
+    0, 0, 0, 
     0/((500.0+DLs)/5.0), 0, 0,
-    0, 0, 0/(UNLOCKED_PETS/100.0)                        
+    0, 0, 0/(UNLOCKED_PETS/100.0)
 };
 
 // Your current upgrade path/the path you want to optimize. If left blank, a random path will be generated.
@@ -168,7 +168,11 @@ struct OptimizationPackage {
     vector<int> path;
     double score;
     mt19937 randomEngine;
-    unordered_set<string> deadMoves = {};
+    bool deadInsert = false;
+    bool deadRemove = false;
+    bool deadReplace = false;
+    bool deadSwap = false;
+    bool deadRotate = false;
 };
 struct CostEntry {
     int resourceIdx; // The ingredient (0-11)
@@ -180,6 +184,12 @@ struct CostList {
 };
 
 CostList COST_CACHE[NUM_UPGRADES+1][MAX_LEVEL];
+
+struct SimSnapshot {
+    array<double, NUM_RESOURCES> resources;
+    array<double, NUM_RESOURCES> rates;
+    array<int, NUM_UPGRADES + 1> levels;
+    double remainingTime;
 void nameUpgrades() {
     for (int i = 0; i < NUM_RESOURCES; i++) {
         upgradeNames[i] = string(resourceNames[i]) + "_Level";
@@ -329,7 +339,7 @@ double performUpgrade(array<int, NUM_UPGRADES + 1>& levels,
         const CostEntry& entry = costList.entries[i];
         double neededResource = entry.amount - resources[entry.resourceIdx];
         if (neededResource <= 0) continue;
-        double rate = RATE_CACHE[entry.resourceIdx][levels[entry.resourceIdx]][levels[entry.resourceIdx + NUM_RESOURCES]];
+        double rate = currentRates[entry.resourceIdx];
         if (rate == 0) {
             timeNeeded = remainingTime;
             break;
@@ -370,7 +380,7 @@ double performUpgrade(array<int, NUM_UPGRADES + 1>& levels,
 }
 double simulateUpgradePath(vector<int>& path, array<int,NUM_UPGRADES + 1>& levels, array<double, NUM_RESOURCES>& resources, bool display = false) {
     double time = TOTAL_SECONDS;
-    thread_local array<double, NUM_RESOURCES> currentRates;
+    array<double, NUM_RESOURCES> currentRates;
     currentRates = initializeProductionRates();
 
     for (auto upgradeType : path) {
@@ -393,7 +403,7 @@ double calculateScore(array<double, NUM_RESOURCES>& resources, bool display = fa
         score += resources[i] * 1e-15;
     }
 
-    score += (min(resources[10], 10000.0) + max(0.0, (resources[10] - 10000)) * 0.01) * (EVENT_CURRENCY_WEIGHT);
+    score += (min(resources[10], 10000.0) + max(0.0, (resources[10] - 10000)) * 0.005) * (EVENT_CURRENCY_WEIGHT);
     score += resources[6] * (FREE_EXP_WEIGHT);          // Free EXP
     score += resources[8] * (PET_STONES_WEIGHT);        // Pet Stones
     score += resources[9] * (RESEARCH_POINTS_WEIGHT);   // Research Points
@@ -402,8 +412,8 @@ double calculateScore(array<double, NUM_RESOURCES>& resources, bool display = fa
     return score;
 }
 double evaluatePath(vector<int>& path, const SearchContext& context) {
-    thread_local array<double, NUM_RESOURCES> testResources;
-    thread_local array<int, NUM_UPGRADES + 1> testLevels;
+    array<double, NUM_RESOURCES> testResources;
+    array<int, NUM_UPGRADES + 1> testLevels;
     testResources = context.resources;
     testLevels = context.levels;
     simulateUpgradePath(path, testLevels, testResources);
@@ -427,13 +437,15 @@ bool tryInsertUpgrade(OptimizationPackage& package, SearchContext& context) {
     const int maxTypes = (NUM_RESOURCES * 2);
 
     for (int i = 0; i < pathLength; i++) {
-        int modulatedInsertPosition = (i + startPosition) % pathLength;
+        int modulatedInsertPosition = i + startPosition;
+        if (modulatedInsertPosition >= pathLength) modulatedInsertPosition -= pathLength;
         package.path.insert(package.path.begin() + modulatedInsertPosition, 0);
 
         int startingUpgradeType = package.randomEngine() % (NUM_RESOURCES * 2);
         for (int upgradeType = 0; upgradeType < maxTypes; upgradeType++) {
 
-            int modulatedUpgradeType = (upgradeType + startingUpgradeType) % maxTypes;
+            int modulatedUpgradeType = upgradeType + startingUpgradeType;
+            if (modulatedUpgradeType >= maxTypes) modulatedUpgradeType -= maxTypes;
             package.path[modulatedInsertPosition] = modulatedUpgradeType;
 
             double testScore = evaluatePath(package.path, context);
@@ -446,7 +458,7 @@ bool tryInsertUpgrade(OptimizationPackage& package, SearchContext& context) {
         }
         package.path.erase(package.path.begin() + modulatedInsertPosition);
     }
-    package.deadMoves.insert("Insert");
+    package.deadInsert = true;
     return false;
 }
 bool tryRemoveUpgrade(OptimizationPackage& package, SearchContext& context) {
@@ -457,7 +469,8 @@ bool tryRemoveUpgrade(OptimizationPackage& package, SearchContext& context) {
     int startPos = swapDist(package.randomEngine);
 
     for (int i = 0; i < pathLength; i++) {
-        int removePos = (i + startPos) % (pathLength);
+        int removePos = i + startPos;
+        if (removePos >= pathLength) removePos -= pathLength;
         int removedUpgrade = package.path[removePos];
 
         package.path.erase(package.path.begin() + removePos);
@@ -470,7 +483,7 @@ bool tryRemoveUpgrade(OptimizationPackage& package, SearchContext& context) {
         }
         package.path.insert(package.path.begin() + removePos, removedUpgrade);
     }
-    package.deadMoves.insert("Remove");
+    package.deadRemove = true;
     return false;
 
 }
@@ -484,13 +497,15 @@ bool tryReplaceUpgrade(OptimizationPackage& package, SearchContext& context) {
 
     for (int i = 0; i < pathLength; i++) {
 
-        int targetIndex = (i + startPosition) % pathLength;
+        int targetIndex = i + startPosition;
+        if (targetIndex >= pathLength) targetIndex -= pathLength;
         int originalType = package.path[targetIndex];
 
         int startingUpgradeType = package.randomEngine() % (NUM_RESOURCES * 2);
         
         for (int upgradeType = 0; upgradeType < maxTypes; upgradeType++) {
-            int modulatedUpgradeType = (upgradeType + startingUpgradeType) % maxTypes;
+            int modulatedUpgradeType = upgradeType + startingUpgradeType;
+            if (modulatedUpgradeType >= maxTypes) modulatedUpgradeType -= maxTypes;
 
             if (modulatedUpgradeType == originalType) continue;
 
@@ -506,7 +521,7 @@ bool tryReplaceUpgrade(OptimizationPackage& package, SearchContext& context) {
         }
         package.path[targetIndex] = originalType;
     }
-    package.deadMoves.insert("Replace");
+    package.deadReplace = true;
     return false;
 }
 bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context) {
@@ -519,8 +534,10 @@ bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context) {
 
     for (int i2 = 0; i2 < pathLength - 1; i2++) { 
         for (int j2 = i2 + 1; j2 < pathLength - 1; j2++) { 
-            int i = (i2 + startPos) % (pathLength - 1);
-            int j = (j2 + startPos) % (pathLength - 1);
+            int i = i2 + startPos;
+            if (i >= pathLength - 1) i -= pathLength - 1;
+            int j = j2 + startPos;
+            if (j >= pathLength - 1) j -= pathLength - 1;
 
             if (package.path[i] == package.path[j]) continue;
             swap(package.path[i], package.path[j]);
@@ -535,7 +552,7 @@ bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context) {
             swap(package.path[i], package.path[j]);
         }
     }
-    package.deadMoves.insert("Swap");
+    package.deadSwap = true;
     return false;
 }
 bool tryRotateSubsequences(OptimizationPackage& package, SearchContext& context) {
@@ -590,13 +607,15 @@ bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& cont
     int startOffset = startOffsetDist(package.randomEngine);
 
     for (int i = 0; i < maxIndex - 1; i++){
-        int rangeStart = (startOffset + i) % (maxIndex - 1);
+        int rangeStart = startOffset + i;
+        if (rangeStart >= maxIndex - 1) rangeStart -= (maxIndex - 1);
 
         int remainingLength = maxIndex - (rangeStart + 2);
         uniform_int_distribution<> endOffsetDist(0, max(0, remainingLength)); 
         int endOffset = endOffsetDist(package.randomEngine);
         for (int j = 0; j < remainingLength; j++){ 
-            int offsetJ = (endOffset + j) % (remainingLength + 1);
+            int offsetJ = endOffset + j;
+            if (offsetJ >= remainingLength + 1) offsetJ -= (remainingLength + 1);
             int rangeEnd = rangeStart + 2 + offsetJ;
 
             auto rangeBeginIt = package.path.begin() + rangeStart;
@@ -626,7 +645,7 @@ bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& cont
             }
         }
     }
-    package.deadMoves.insert("Rotate");
+    package.deadRotate = true;
     return false;
 }
 void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, const int maxIterations = 10000) {
@@ -645,20 +664,24 @@ void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, c
 
         int strategy = iterationCount % 100;
 
-        if(package.deadMoves.count("Rotate")){
+        if(package.deadRotate){
             break;
         }
-        else if (package.deadMoves.count("Insert") && package.deadMoves.count("Remove") && package.deadMoves.count("Replace") && package.deadMoves.count("Swap"))
-                                                                         {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
-        else if (strategy < 15 && !package.deadMoves.count("Insert"))    {improved = tryInsertUpgrade(package, context); if (improved) InsertCount++;}
-        else if (strategy < 30 && !package.deadMoves.count("Replace"))   {improved = tryReplaceUpgrade(package, context); if (improved) ReplaceCount++;}
-        else if (strategy < 45 && !package.deadMoves.count("Remove"))    {improved = tryRemoveUpgrade(package, context); if (improved) RemoveCount++;}
-        else if (strategy < 47)                                          {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
-        else if (!package.deadMoves.count("Swap"))                       {improved = trySwapUpgrades(package, context); if (improved) SwapCount++;}
+        else if (package.deadInsert && package.deadRemove && package.deadReplace && package.deadSwap)
+                                                            {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
+        else if (strategy < 15 && !package.deadInsert)      {improved = tryInsertUpgrade(package, context); if (improved) InsertCount++;}
+        else if (strategy < 30 && !package.deadReplace)     {improved = tryReplaceUpgrade(package, context); if (improved) ReplaceCount++;}
+        else if (strategy < 45 && !package.deadRemove)      {improved = tryRemoveUpgrade(package, context); if (improved) RemoveCount++;}
+        else if (strategy < 47)                             {improved = tryRotateSubsequences(package, context); if (improved) RotationCount++;}
+        else if (!package.deadSwap)                         {improved = trySwapUpgrades(package, context); if (improved) SwapCount++;}
         
         if (improved) {
             noImprovementStreak = 0;
-            package.deadMoves.clear();
+            package.deadInsert = false;
+            package.deadRemove = false;
+            package.deadReplace = false;
+            package.deadSwap = false;
+            package.deadRotate = false;
             continue;
         } 
         else noImprovementStreak++;
