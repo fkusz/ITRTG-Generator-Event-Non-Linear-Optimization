@@ -401,9 +401,8 @@ FodyWeavers.xsd
 *.sln.iml
 /.vscode
 /build
-Easter_2025_v2.exe
+*.exe
 Testing.cpp
 Testing.exe
 OptimizedPaths.txt
-Easter_2025_v3.exe
-Valentine_2026.exe
+Summer_2025_Multithreading.cpp
