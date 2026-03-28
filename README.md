@@ -6,12 +6,12 @@ This script uses non-linear optimization techniques to find the best upgrade str
 
 ---
 
-## 🚀 Quick Start (Online Compiler)
+## Quick Start (Online Compiler)
 
 Don't want to mess with local environments? You can run the optimizer directly in your browser!
 
 1. **Open an Online Compiler**: Use [Programiz C++ Compiler](https://www.programiz.com/cpp-programming/online-compiler/) (or any other C++ compiler supporting **C++23** or newer).
-2. **Copy the Script**: Paste the code from `Valentine_2026.cpp` into the compiler.
+2. **Copy the Script**: Paste the code from `EVENT_NAME_YEAR.cpp` into the compiler.
 3. **Update `#USER SETTINGS`**:
    - `unlockedPets`: Number of unlocked pets.
    - `DLs`: Number of DLs per your stats page.
@@ -26,7 +26,7 @@ Don't want to mess with local environments? You can run the optimizer directly i
 
 ---
 
-## 💻 Running Locally
+## Running Locally
 
 For maximum performance or endless overnight optimization, run the script locally.
 
@@ -36,7 +36,7 @@ For maximum performance or endless overnight optimization, run the script locall
 
 ---
 
-## ⚙️ Advanced Settings
+## Advanced Settings
 
 Configure these settings inside the script to fine-tune the sim's behavior:
 
@@ -46,7 +46,7 @@ Configure these settings inside the script to fine-tune the sim's behavior:
 
 ---
 
-## 📅 Scheduling "Busy Times"
+## Scheduling "Busy Times"
 
 The optimizer can account for work meetings, sleeping, or anytime you are away from the game! Pre-schedule your unavailability so the sim can optimize *around* your schedule.
 
