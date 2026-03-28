@@ -190,6 +190,7 @@ struct SimSnapshot {
     array<double, NUM_RESOURCES> rates;
     array<int, NUM_UPGRADES + 1> levels;
     double remainingTime;
+};
 void nameUpgrades() {
     for (int i = 0; i < NUM_RESOURCES; i++) {
         upgradeNames[i] = string(resourceNames[i]) + "_Level";
