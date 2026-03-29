@@ -14,7 +14,7 @@ Don't want to mess with local environments? You can run the optimizer directly i
 2. **Copy the Script**: Paste the code from `EVENT_NAME_YEAR.cpp` into the compiler.
 3. **Update `#USER SETTINGS`**:
    - `unlockedPets`: Number of unlocked pets.
-   - `DLs`: Number of DLs per your stats page.
+   - `DLs`: Number of Dungeon Levels per your stats page.
    - `timeUntilEnd`: Time remaining until the event ends.
    *(Make sure to update these as needed throughout the event!)*
 4. **Run the Code**: The first run will time itself out or stop when the score no longer changes drastically. Each block of output shows your **upgrade path** (a long list of comma-separated values) and the **projected score** underneath.
