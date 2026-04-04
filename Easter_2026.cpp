@@ -1,17 +1,3 @@
-// Original Author & Concept: Syokora
-// V2 Update by: Frolf
-// added "Busy Times" feature so purchases won't be planned for when you're at work, school, sleeping, etc. Should help make the sims "one and done"
-// added multi-thread parallelization to produce multiple solutions and pick the best one
-// added additional methods for the optimizer to escape local optima (randomize subsequences, delete upgrades, etc.)
-// Made existing methods more thorough to help escape local optima
-// Made existing methods more efficient to improve runtime (Should get fairly decent results in ~10 seconds)
-// Rehauled variable names, created classes, structs, added modularity, and cleaned up comments to make it easier to maintain for others 
-// Improve generalization to make it easier to update for different events;
-// Fixed a few non-critical bugs that were causing slower run-times or inadequate searching
-// Fixed rare bug where the score can become unbounded and skyrocket
-// (WIP) added the option for absolute timestamps for upgrade buy-times rather than timestamps relative to the start of the sim
-// (WIP) add parallelization for a isngle solution to produce a near-instant single solution
-
 #include <iostream>
 #include <chrono>
 #include <fstream>
