@@ -16,6 +16,7 @@ Don't want to mess with local environments? You can run the optimizer directly i
 4. **Update `#USER SETTINGS`**:
    - `unlockedPets`: Number of unlocked pets.
    - `DLs`: Number of Dungeon Levels per your stats page.
+   - `AL` : Adventure Mode Level per your Adventure Mode stats page (Not Class Levels!)
    - `timeUntilEnd`: Time remaining until the event ends.
    *(Make sure to update these as needed throughout the event!)*
 5. **Run the Code**: The first run will time itself out or stop when the score no longer changes drastically. Each block of output shows your **upgrade path** (a long list of comma-separated values) and the **projected score** underneath.

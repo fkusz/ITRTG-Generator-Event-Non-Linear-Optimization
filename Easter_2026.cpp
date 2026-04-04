@@ -19,6 +19,7 @@ const int EVENT_DURATION_MINUTES = 0;
 const int EVENT_DURATION_SECONDS = 0;
 const int UNLOCKED_PETS = #ENTER_YOUR_UNLOCKED_PETS#;
 const int DLs = #ENTER_YOUR_DUNGEON_LEVELS#;
+const int AL = #ENTER_YOUR_ADVENTURE_LEVEL#;
 
 array<int, 25> currentLevels = { 
     // Current Production Levels
@@ -40,7 +41,7 @@ array<double, 12> resourceCounts = {
     0, 500000, 0, 
     0, 0, 0, 
     0/((500.0+DLs)/5.0), 0, 0,
-    0, 0, 0/(UNLOCKED_PETS/100.0)
+    0/(0.5+AL/100.0), 0, 0/(UNLOCKED_PETS/100.0)
 };
 
 // Your current upgrade path/the path you want to optimize. If left blank, a random path will be generated.
@@ -213,7 +214,7 @@ void printFormattedResults(vector<int>& path, array<int, NUM_UPGRADES + 1>& simu
         << simulationResources[6] * (500.0 + DLs) / 5.0 
         << " (" << simulationResources[6] << " levels * cycles)" << "\n";
     cout << "Pet Stones: " << simulationResources[8] << "\n";
-    cout << "Research Points: " << simulationResources[9] << "\n";
+    cout << "Research Points: " << simulationResources[9] * (0.5 + AL/100) << "\n";
     cout << "Growth (" << UNLOCKED_PETS << " pets): " 
         << simulationResources[11] * UNLOCKED_PETS / 100.0 
         << " (" << simulationResources[11] << " levels * cycles)" << "\n";
@@ -387,14 +388,14 @@ double calculateScore(array<double, NUM_RESOURCES>& resources, bool display = fa
     double score = 0;
 
     for (int i = 0; i < NUM_RESOURCES; i++) {
-        score += resources[i] * 1e-15;
+        score += resources[i] * 1e-15; // Give a very small score for each resource to incentivize early investment. Otherwise sim breaks for event start
     }
 
     score += (min(resources[10], 10000.0) + max(0.0, (resources[10] - 10000)) * 0.005) * (EVENT_CURRENCY_WEIGHT);
-    score += resources[6] * (FREE_EXP_WEIGHT);          // Free EXP
-    score += resources[8] * (PET_STONES_WEIGHT);        // Pet Stones
-    score += resources[9] * (RESEARCH_POINTS_WEIGHT);   // Research Points
-    score += resources[11] * (GROWTH_WEIGHT);           // Growth
+    score += resources[6] * (FREE_EXP_WEIGHT);
+    score += resources[8] * (PET_STONES_WEIGHT);
+    score += resources[9] * (RESEARCH_POINTS_WEIGHT);
+    score += resources[11] * (GROWTH_WEIGHT);
     
     return score;
 }
