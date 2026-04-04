@@ -63,7 +63,7 @@ const vector<double> busyTimesStart =   {}; // The first hours, relative to the 
 const vector<double> busyTimesEnd =     {}; // The first hours, relative to the start of the simulation, you'll be able to purchase upgrades again
 // END ADVANCED SETTINGS ------------------------------------------------------------------
 // PROGRAM SETTINGS -----------------------------------------------------------------------
-constexpr array<const char*, 12> resourceNames = {"Love_Bow", "Love_Arrows", "Chocolate", "Cubear", "Rose", "Cake", "FREE_EXP", "Love_Bear", "PET_STONES", "RESEARCH_POINTS", "EVENT_CURRENCY", "GROWTH"};
+constexpr array<const char*, 12> resourceNames = {"Blue", "White", "Mixed", "Blue/White", "Red", "Striped", "FREE_EXP", "Red/White", "PET_STONES", "RESEARCH_POINTS", "EVENT_CURRENCY", "GROWTH"};
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
 constexpr int NUM_UPGRADES = NUM_RESOURCES * 2;
