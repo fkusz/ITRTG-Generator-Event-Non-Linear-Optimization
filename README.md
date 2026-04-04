@@ -10,16 +10,17 @@ This script uses non-linear optimization techniques to find the best upgrade str
 
 Don't want to mess with local environments? You can run the optimizer directly in your browser!
 
-1. **Open an Online Compiler**: Use [Programiz C++ Compiler](https://www.programiz.com/cpp-programming/online-compiler/) (or any other C++ compiler supporting **C++23** or newer).
-2. **Copy the Script**: Paste the code from `EVENT_NAME_YEAR.cpp` into the compiler.
-3. **Update `#USER SETTINGS`**:
+1. **Open an Online Compiler**: Use [C++ Shell](https://cpp.sh/) (or any other C++ compiler supporting **C++23** or newer).
+   (Note: some online compilers, such as [Programiz C++ Compiler](https://www.programiz.com/cpp-programming/online-compiler/), do not allow you to choose your compiler version. These will not work for this code.)
+3. **Copy the Script**: Paste the code from `EVENT_NAME_YEAR.cpp` into the compiler.
+4. **Update `#USER SETTINGS`**:
    - `unlockedPets`: Number of unlocked pets.
    - `DLs`: Number of Dungeon Levels per your stats page.
    - `timeUntilEnd`: Time remaining until the event ends.
    *(Make sure to update these as needed throughout the event!)*
-4. **Run the Code**: The first run will time itself out or stop when the score no longer changes drastically. Each block of output shows your **upgrade path** (a long list of comma-separated values) and the **projected score** underneath.
-5. **Resume Optimization**: If you want to optimize further, copy the comma-separated values into the `upgradePath` variable (around line 59) in the script. The sim will resume from where it left off.
-6. **Get Your Path**: The sim will naturally finish after 10,000 consecutive failed improvements and print a plain, readable upgrade plan. 
+5. **Run the Code**: The first run will time itself out or stop when the score no longer changes drastically. Each block of output shows your **upgrade path** (a long list of comma-separated values) and the **projected score** underneath.
+6. **Resume Optimization**: If you want to optimize further, copy the comma-separated values into the `upgradePath` variable (around line 59) in the script. The sim will resume from where it left off.
+7. **Get Your Path**: The sim will naturally finish after 10,000 consecutive failed improvements and print a plain, readable upgrade plan. 
    - *Skipping the wait:* If you are happy with a path early, paste the CSV back into `upgradePath` (line 59), set the appropriate flag to `false` (line 62), and run it again to instantly get a readable plan.
 
 > **Note:** The time values printed for each step are relative to the *start* of the script. If you see `28min` followed by `38min`, you wait 10 minutes between purchasing those upgrades.
