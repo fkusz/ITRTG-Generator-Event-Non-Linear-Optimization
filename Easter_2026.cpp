@@ -1,3 +1,7 @@
+#ifndef ENABLE_PARALLEL_SWAP
+#define ENABLE_PARALLEL_SWAP 1 // Set to 0 if your compiler has trouble linking std::thread.
+#endif
+
 #include <iostream>
 #include <chrono>
 #include <fstream>
@@ -8,6 +12,10 @@
 #include <random> 
 #include <array>
 #include <unordered_set>
+#if ENABLE_PARALLEL_SWAP
+#include <thread>
+#include <atomic>
+#endif
 
 using namespace std;
 typedef long long ll;
@@ -70,6 +78,10 @@ constexpr int NUM_RESOURCES = resourceNames.size();
 constexpr int NUM_UPGRADES = NUM_RESOURCES * 2;
 const int MAX_LEVEL = 71; //Pretend there's a max level for constructing lookup tables. Any number that won't practically be reached is fine to use.
 const int MAX_SPEED_LEVEL = 11; // 0-10 is 11 distinct "levels"
+#if ENABLE_PARALLEL_SWAP
+constexpr long long PARALLEL_SWAP_MIN_CANDIDATES = 20000;
+constexpr int PARALLEL_SWAP_MAX_THREADS = 8;
+#endif
 constexpr int TOTAL_SECONDS = ((EVENT_DURATION_DAYS)*24*3600+(EVENT_DURATION_HOURS)*3600+(EVENT_DURATION_MINUTES)*60+EVENT_DURATION_SECONDS);
 map<int, string> upgradeNames;
 array<double, TOTAL_SECONDS + 1> timeNeededSeconds{};
@@ -475,6 +487,111 @@ double calculateFinalPath(vector<int>& path, const array<int, NUM_UPGRADES + 1>&
     printFormattedResults(path, simulationLevels, simulationResources, simulationScore);
     return simulationScore;
 }
+#if ENABLE_PARALLEL_SWAP
+struct SwapSearchResult {
+    bool found = false;
+    long long order = 0;
+    int indexA = -1;
+    int indexB = -1;
+    double score = 0;
+};
+long long pairsBeforeRow(int row, int searchLength) {
+    return static_cast<long long>(row) * (2LL * searchLength - row - 1) / 2;
+}
+pair<int, int> pairFromOrder(long long order, int searchLength) {
+    int low = 0;
+    int high = searchLength - 2;
+
+    while (low < high) {
+        int mid = (low + high + 1) / 2;
+        if (pairsBeforeRow(mid, searchLength) <= order) {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    int first = low;
+    int second = first + 1 + static_cast<int>(order - pairsBeforeRow(first, searchLength));
+    return {first, second};
+}
+int chooseSwapThreadCount(long long candidateCount) {
+    unsigned int hardwareThreads = thread::hardware_concurrency();
+    if (candidateCount < PARALLEL_SWAP_MIN_CANDIDATES || hardwareThreads < 2) {
+        return 1;
+    }
+
+    long long workSizedThreads = max(2LL, candidateCount / 5000);
+    return static_cast<int>(min<long long>({hardwareThreads, PARALLEL_SWAP_MAX_THREADS, workSizedThreads}));
+}
+bool trySwapUpgradesParallel(OptimizationPackage& package, SearchContext& context, int startPos, int searchLength, long long candidateCount, int threadCount) {
+    atomic<long long> earliestImprovement(candidateCount);
+    vector<SwapSearchResult> results(threadCount);
+    vector<thread> workers;
+    workers.reserve(threadCount);
+
+    for (int threadIndex = 0; threadIndex < threadCount; threadIndex++) {
+        long long beginOrder = candidateCount * threadIndex / threadCount;
+        long long endOrder = candidateCount * (threadIndex + 1) / threadCount;
+
+        workers.emplace_back([&, threadIndex, beginOrder, endOrder]() {
+            vector<int> localPath = package.path;
+            auto [row, column] = pairFromOrder(beginOrder, searchLength);
+
+            for (long long order = beginOrder; order < endOrder && order < earliestImprovement.load(memory_order_relaxed); order++) {
+                int indexA = row + startPos;
+                if (indexA >= searchLength) indexA -= searchLength;
+
+                int indexB = column + startPos;
+                if (indexB >= searchLength) indexB -= searchLength;
+
+                if (localPath[indexA] != localPath[indexB]) {
+                    swap(localPath[indexA], localPath[indexB]);
+                    double testScore = evaluatePathFromSnapshot(localPath, package.snapshots, min(indexA, indexB));
+
+                    if (testScore > package.score) {
+                        results[threadIndex] = SwapSearchResult{true, order, indexA, indexB, testScore};
+
+                        long long observed = earliestImprovement.load(memory_order_relaxed);
+                        while (order < observed && !earliestImprovement.compare_exchange_weak(observed, order, memory_order_relaxed)) {}
+                        break;
+                    }
+
+                    swap(localPath[indexA], localPath[indexB]);
+                }
+
+                column++;
+                if (column >= searchLength) {
+                    row++;
+                    column = row + 1;
+                }
+            }
+        });
+    }
+
+    for (thread& worker : workers) {
+        worker.join();
+    }
+
+    SwapSearchResult bestResult;
+    bestResult.order = candidateCount;
+    for (const SwapSearchResult& result : results) {
+        if (result.found && result.order < bestResult.order) {
+            bestResult = result;
+        }
+    }
+
+    if (!bestResult.found) {
+        return false;
+    }
+
+    swap(package.path[bestResult.indexA], package.path[bestResult.indexB]);
+    package.score = bestResult.score;
+    context.logger.logImprovement("Swap", package.path, package.score);
+    invalidateSnapshots(package);
+    return true;
+}
+#endif
 bool tryInsertUpgrade(OptimizationPackage& package, SearchContext& context) {
 
     int pathLength = package.path.size();
@@ -579,24 +696,39 @@ bool tryReplaceUpgrade(OptimizationPackage& package, SearchContext& context) {
 }
 bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context) {
 
-    int pathLength = package.path.size() - 1;
-    double testScore;
+    int pathLength = static_cast<int>(package.path.size()) - 1;
+    int searchLength = pathLength - 1;
+    if (searchLength < 2) {
+        package.deadSwap = true;
+        return false;
+    }
 
-    uniform_int_distribution<> swapDist(0, pathLength - 2);
+    uniform_int_distribution<> swapDist(0, searchLength - 1);
     int startPos = swapDist(package.randomEngine);
     ensureSnapshots(package, context);
 
-    for (int i2 = 0; i2 < pathLength - 1; i2++) { 
-        for (int j2 = i2 + 1; j2 < pathLength - 1; j2++) { 
+#if ENABLE_PARALLEL_SWAP
+    long long candidateCount = static_cast<long long>(searchLength) * (searchLength - 1) / 2;
+    int threadCount = chooseSwapThreadCount(candidateCount);
+    if (threadCount > 1) {
+        bool improved = trySwapUpgradesParallel(package, context, startPos, searchLength, candidateCount, threadCount);
+        if (improved) return true;
+        package.deadSwap = true;
+        return false;
+    }
+#endif
+
+    for (int i2 = 0; i2 < searchLength; i2++) { 
+        for (int j2 = i2 + 1; j2 < searchLength; j2++) { 
             int i = i2 + startPos;
-            if (i >= pathLength - 1) i -= pathLength - 1;
+            if (i >= searchLength) i -= searchLength;
             int j = j2 + startPos;
-            if (j >= pathLength - 1) j -= pathLength - 1;
+            if (j >= searchLength) j -= searchLength;
 
             if (package.path[i] == package.path[j]) continue;
             swap(package.path[i], package.path[j]);
 
-            testScore = evaluatePathFromSnapshot(package.path, package.snapshots, min(i, j));
+            double testScore = evaluatePathFromSnapshot(package.path, package.snapshots, min(i, j));
 
             if (testScore > package.score) {
                 package.score = testScore;
