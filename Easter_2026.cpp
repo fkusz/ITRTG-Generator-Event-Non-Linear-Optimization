@@ -17,9 +17,9 @@ const int EVENT_DURATION_DAYS = 14;
 const int EVENT_DURATION_HOURS = 0;
 const int EVENT_DURATION_MINUTES = 0;
 const int EVENT_DURATION_SECONDS = 0;
-const int UNLOCKED_PETS = #ENTER_YOUR_UNLOCKED_PETS#;
-const int DLs = #ENTER_YOUR_DUNGEON_LEVELS#;
-const int AL = #ENTER_YOUR_ADVENTURE_LEVEL#;
+const int UNLOCKED_PETS = 47;
+const int DLs = 3070;
+const int AL = 211;
 
 array<int, 25> currentLevels = { 
     // Current Production Levels
@@ -45,7 +45,7 @@ array<double, 12> resourceCounts = {
 };
 
 // Your current upgrade path/the path you want to optimize. If left blank, a random path will be generated.
-vector<int> upgradePath = {7,11,9,11,9,24,};
+vector<int> upgradePath = {};
 const bool isFullPath = false;
 const bool runOptimization = true; // Set false to only see the results and timings of your path
 const bool endlessMode = false; //Repeat optimization until *manually* stopped. Prints a path to file if it's better than every other previous path. Only works running locally
@@ -151,10 +151,18 @@ struct SearchContext {
     const array<double, NUM_RESOURCES>& resources;
     const array<int, NUM_UPGRADES + 1>& levels;
 };
+struct SimSnapshot {
+    array<double, NUM_RESOURCES> resources;
+    array<double, NUM_RESOURCES> rates;
+    array<int, NUM_UPGRADES + 1> levels;
+    double remainingTime;
+};
 struct OptimizationPackage {
     vector<int> path;
     double score;
     mt19937 randomEngine;
+    vector<SimSnapshot> snapshots;
+    bool snapshotsValid = false;
     bool deadInsert = false;
     bool deadRemove = false;
     bool deadReplace = false;
@@ -171,13 +179,6 @@ struct CostList {
 };
 
 CostList COST_CACHE[NUM_UPGRADES+1][MAX_LEVEL];
-
-struct SimSnapshot {
-    array<double, NUM_RESOURCES> resources;
-    array<double, NUM_RESOURCES> rates;
-    array<int, NUM_UPGRADES + 1> levels;
-    double remainingTime;
-};
 void nameUpgrades() {
     for (int i = 0; i < NUM_RESOURCES; i++) {
         upgradeNames[i] = string(resourceNames[i]) + "_Level";
@@ -214,7 +215,7 @@ void printFormattedResults(vector<int>& path, array<int, NUM_UPGRADES + 1>& simu
         << simulationResources[6] * (500.0 + DLs) / 5.0 
         << " (" << simulationResources[6] << " levels * cycles)" << "\n";
     cout << "Pet Stones: " << simulationResources[8] << "\n";
-    cout << "Research Points: " << simulationResources[9] * (0.5 + ML/100) << "\n";
+    cout << "Research Points: " << simulationResources[9] * (0.5 + AL/100.0) << "\n";
     cout << "Growth (" << UNLOCKED_PETS << " pets): " 
         << simulationResources[11] * UNLOCKED_PETS / 100.0 
         << " (" << simulationResources[11] << " levels * cycles)" << "\n";
@@ -230,10 +231,10 @@ void cacheProductionRates() {
         }
     }
 }
-array<double, NUM_RESOURCES> initializeProductionRates() {
+array<double, NUM_RESOURCES> initializeProductionRates(const array<int, NUM_UPGRADES + 1>& levels = currentLevels) {
     array<double, NUM_RESOURCES> rates;
     for (int res = 0; res < NUM_RESOURCES; res++) {
-        rates[res] = RATE_CACHE[res][currentLevels[res]][currentLevels[res + NUM_RESOURCES]];
+        rates[res] = RATE_CACHE[res][levels[res]][levels[res + NUM_RESOURCES]];
     }
     return rates;
 }
@@ -367,23 +368,45 @@ double performUpgrade(array<int, NUM_UPGRADES + 1>& levels,
     
     return timeNeeded;
 }
-double simulateUpgradePath(vector<int>& path, array<int,NUM_UPGRADES + 1>& levels, array<double, NUM_RESOURCES>& resources, bool display = false) {
-    double time = TOTAL_SECONDS;
-    array<double, NUM_RESOURCES> currentRates;
-    currentRates = initializeProductionRates();
+SimSnapshot makeInitialSnapshot(const SearchContext& context) {
+    SimSnapshot snapshot;
+    snapshot.resources = context.resources;
+    snapshot.levels = context.levels;
+    snapshot.rates = initializeProductionRates(snapshot.levels);
+    snapshot.remainingTime = TOTAL_SECONDS;
+    return snapshot;
+}
+double simulateUpgradePathFrom(const vector<int>& path, SimSnapshot& snapshot, int startIndex = 0, bool display = false) {
+    for (int pathIndex = startIndex; pathIndex < static_cast<int>(path.size()); pathIndex++) {
+        if (snapshot.remainingTime < 1e-3) return 0;
 
-    for (auto upgradeType : path) {
-        if (time < 1e-3) return 0;
-        if (upgradeType >= NUM_RESOURCES && levels[upgradeType] >= 10) return INFINITY_VALUE;
-        double timeTaken = performUpgrade(levels, resources, currentRates, upgradeType, time);
-        time -= timeTaken;
+        int upgradeType = path[pathIndex];
+        if (upgradeType >= NUM_RESOURCES && snapshot.levels[upgradeType] >= 10) {
+            snapshot.remainingTime = 0;
+            return INFINITY_VALUE;
+        }
+
+        double timeTaken = performUpgrade(snapshot.levels, snapshot.resources, snapshot.rates, upgradeType, snapshot.remainingTime);
+        snapshot.remainingTime -= timeTaken;
         
         if (display) {
-            int elapsedSeconds = TOTAL_SECONDS - time;
-            readoutUpgrade(upgradeType, levels, elapsedSeconds);
+            int elapsedSeconds = TOTAL_SECONDS - snapshot.remainingTime;
+            readoutUpgrade(upgradeType, snapshot.levels, elapsedSeconds);
         }
     }
-    return time;
+    return snapshot.remainingTime;
+}
+double simulateUpgradePath(const vector<int>& path, array<int,NUM_UPGRADES + 1>& levels, array<double, NUM_RESOURCES>& resources, bool display = false) {
+    SimSnapshot snapshot;
+    snapshot.resources = resources;
+    snapshot.levels = levels;
+    snapshot.rates = initializeProductionRates(snapshot.levels);
+    snapshot.remainingTime = TOTAL_SECONDS;
+
+    double remainingTime = simulateUpgradePathFrom(path, snapshot, 0, display);
+    resources = snapshot.resources;
+    levels = snapshot.levels;
+    return remainingTime;
 }
 double calculateScore(array<double, NUM_RESOURCES>& resources, bool display = false) {
     double score = 0;
@@ -400,7 +423,42 @@ double calculateScore(array<double, NUM_RESOURCES>& resources, bool display = fa
     
     return score;
 }
-double evaluatePath(vector<int>& path, const SearchContext& context) {
+void buildSnapshots(const vector<int>& path, const SearchContext& context, vector<SimSnapshot>& snapshots) {
+    snapshots.clear();
+    snapshots.reserve(path.size() + 1);
+
+    SimSnapshot snapshot = makeInitialSnapshot(context);
+    snapshots.push_back(snapshot);
+
+    for (int pathIndex = 0; pathIndex < static_cast<int>(path.size()); pathIndex++) {
+        if (snapshot.remainingTime >= 1e-3) {
+            int upgradeType = path[pathIndex];
+            if (upgradeType >= NUM_RESOURCES && snapshot.levels[upgradeType] >= 10) {
+                snapshot.remainingTime = 0;
+            } else {
+                double timeTaken = performUpgrade(snapshot.levels, snapshot.resources, snapshot.rates, upgradeType, snapshot.remainingTime);
+                snapshot.remainingTime -= timeTaken;
+            }
+        }
+        snapshots.push_back(snapshot);
+    }
+}
+void ensureSnapshots(OptimizationPackage& package, const SearchContext& context) {
+    if (!package.snapshotsValid) {
+        buildSnapshots(package.path, context, package.snapshots);
+        package.snapshotsValid = true;
+    }
+}
+void invalidateSnapshots(OptimizationPackage& package) {
+    package.snapshotsValid = false;
+}
+double evaluatePathFromSnapshot(const vector<int>& path, const vector<SimSnapshot>& snapshots, int startIndex) {
+    startIndex = max(0, min(startIndex, static_cast<int>(snapshots.size()) - 1));
+    SimSnapshot snapshot = snapshots[startIndex];
+    simulateUpgradePathFrom(path, snapshot, startIndex);
+    return calculateScore(snapshot.resources);
+}
+double evaluatePath(const vector<int>& path, const SearchContext& context) {
     array<double, NUM_RESOURCES> testResources;
     array<int, NUM_UPGRADES + 1> testLevels;
     testResources = context.resources;
@@ -408,8 +466,8 @@ double evaluatePath(vector<int>& path, const SearchContext& context) {
     simulateUpgradePath(path, testLevels, testResources);
     return calculateScore(testResources);
 }
-double calculateFinalPath(vector<int>& path){
-    array<int, NUM_UPGRADES + 1>     simulationLevels(currentLevels);
+double calculateFinalPath(vector<int>& path, const array<int, NUM_UPGRADES + 1>& startingLevels = currentLevels){
+    array<int, NUM_UPGRADES + 1>     simulationLevels(startingLevels);
     array<double, NUM_RESOURCES>  simulationResources(resourceCounts);
 
     simulateUpgradePath(path, simulationLevels, simulationResources, true);
@@ -424,6 +482,7 @@ bool tryInsertUpgrade(OptimizationPackage& package, SearchContext& context) {
     uniform_int_distribution<> positionDist(0, pathLength);
     int startPosition = positionDist(package.randomEngine);
     const int maxTypes = (NUM_RESOURCES * 2);
+    ensureSnapshots(package, context);
 
     for (int i = 0; i < pathLength; i++) {
         int modulatedInsertPosition = i + startPosition;
@@ -437,11 +496,12 @@ bool tryInsertUpgrade(OptimizationPackage& package, SearchContext& context) {
             if (modulatedUpgradeType >= maxTypes) modulatedUpgradeType -= maxTypes;
             package.path[modulatedInsertPosition] = modulatedUpgradeType;
 
-            double testScore = evaluatePath(package.path, context);
+            double testScore = evaluatePathFromSnapshot(package.path, package.snapshots, modulatedInsertPosition);
 
             if (testScore > package.score) {
                 package.score = testScore;
                 context.logger.logImprovement("Insert", package.path, package.score);
+                invalidateSnapshots(package);
                 return true;
             }
         }
@@ -456,6 +516,7 @@ bool tryRemoveUpgrade(OptimizationPackage& package, SearchContext& context) {
 
     uniform_int_distribution<> swapDist(0, pathLength - 2);
     int startPos = swapDist(package.randomEngine);
+    ensureSnapshots(package, context);
 
     for (int i = 0; i < pathLength; i++) {
         int removePos = i + startPos;
@@ -463,11 +524,12 @@ bool tryRemoveUpgrade(OptimizationPackage& package, SearchContext& context) {
         int removedUpgrade = package.path[removePos];
 
         package.path.erase(package.path.begin() + removePos);
-        double testScore = evaluatePath(package.path, context);
+        double testScore = evaluatePathFromSnapshot(package.path, package.snapshots, removePos);
 
         if (testScore >= package.score) {
             package.score = testScore;
             context.logger.logImprovement("Remove", package.path, package.score);
+            invalidateSnapshots(package);
             return true;
         }
         package.path.insert(package.path.begin() + removePos, removedUpgrade);
@@ -483,6 +545,7 @@ bool tryReplaceUpgrade(OptimizationPackage& package, SearchContext& context) {
     uniform_int_distribution<> positionDist(0, pathLength - 1); // -1 because we access index, not insert
     int startPosition = positionDist(package.randomEngine);
     const int maxTypes = (NUM_RESOURCES * 2);
+    ensureSnapshots(package, context);
 
     for (int i = 0; i < pathLength; i++) {
 
@@ -500,11 +563,12 @@ bool tryReplaceUpgrade(OptimizationPackage& package, SearchContext& context) {
 
             package.path[targetIndex] = modulatedUpgradeType;
 
-            double testScore = evaluatePath(package.path, context);
+            double testScore = evaluatePathFromSnapshot(package.path, package.snapshots, targetIndex);
 
             if (testScore > package.score) {
                 package.score = testScore;
                 context.logger.logImprovement("Replace", package.path, package.score);
+                invalidateSnapshots(package);
                 return true;
             }
         }
@@ -520,6 +584,7 @@ bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context) {
 
     uniform_int_distribution<> swapDist(0, pathLength - 2);
     int startPos = swapDist(package.randomEngine);
+    ensureSnapshots(package, context);
 
     for (int i2 = 0; i2 < pathLength - 1; i2++) { 
         for (int j2 = i2 + 1; j2 < pathLength - 1; j2++) { 
@@ -531,11 +596,12 @@ bool trySwapUpgrades(OptimizationPackage& package, SearchContext& context) {
             if (package.path[i] == package.path[j]) continue;
             swap(package.path[i], package.path[j]);
 
-            testScore = evaluatePath(package.path, context);
+            testScore = evaluatePathFromSnapshot(package.path, package.snapshots, min(i, j));
 
             if (testScore > package.score) {
                 package.score = testScore;
                 context.logger.logImprovement("Swap", package.path, package.score);
+                invalidateSnapshots(package);
                 return true;
             }
             swap(package.path[i], package.path[j]);
@@ -557,6 +623,7 @@ bool tryRotateSubsequences(OptimizationPackage& package, SearchContext& context)
 
     uniform_int_distribution<> endDist(rangeStart + 2, maxIndex);
     int rangeEnd = endDist(package.randomEngine);
+    ensureSnapshots(package, context);
 
     // Iterators for the range [first, last)
     // Note: rangeEnd is inclusive index, so iterator is +1
@@ -573,10 +640,11 @@ bool tryRotateSubsequences(OptimizationPackage& package, SearchContext& context)
         if(rotateLeft)  rotate(rangeBeginIt, rangeBeginIt + shiftAmount, rangeEndIt); // Left rotation
         else            rotate(rangeBeginIt, rangeEndIt - shiftAmount, rangeEndIt); // Right rotation
 
-        testScore = evaluatePath(package.path, context);
+        testScore = evaluatePathFromSnapshot(package.path, package.snapshots, rangeStart);
         if (testScore > package.score) {
             package.score = testScore;
             context.logger.logImprovement("Rotation", package.path, package.score);
+            invalidateSnapshots(package);
             return true;
         }
         //To undo Left(X), we Rotate Right(X)
@@ -594,6 +662,7 @@ bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& cont
 
     uniform_int_distribution<> startOffsetDist(0, maxIndex - 2);
     int startOffset = startOffsetDist(package.randomEngine);
+    ensureSnapshots(package, context);
 
     for (int i = 0; i < maxIndex - 1; i++){
         int rangeStart = startOffset + i;
@@ -620,11 +689,12 @@ bool exhaustRotateSubsequences(OptimizationPackage& package, SearchContext& cont
                 if(rotateLeft)  rotate(rangeBeginIt, rangeBeginIt + shiftAmount, rangeEndIt); // Left rotation
                 else            rotate(rangeBeginIt, rangeEndIt - shiftAmount, rangeEndIt); // Right rotation
 
-                double testScore = evaluatePath(package.path, context);
+                double testScore = evaluatePathFromSnapshot(package.path, package.snapshots, rangeStart);
 
                 if (testScore > package.score) {
                     package.score = testScore;
                     context.logger.logImprovement("Rotation", package.path, package.score);
+                    invalidateSnapshots(package);
                     return true;
                 }
                 //To undo Left(X), we Rotate Right(X)
@@ -704,7 +774,6 @@ void optimizeUpgradePath(OptimizationPackage& package, SearchContext& context, c
 
 int main() {
     upgradePath.reserve(500);
-    array<int, NUM_UPGRADES + 1> levelsCopy(currentLevels);
     double finalScore;
     double UltraScore = 0;
     nameUpgrades();
@@ -718,20 +787,21 @@ int main() {
             upgradePath = generateRandomPath();
         }
 
+        array<int, NUM_UPGRADES + 1> activeLevels(currentLevels);
         if (isFullPath) {
-            levelsCopy = adjustFullPath(levelsCopy);
+            activeLevels = adjustFullPath(activeLevels);
         }
 
-        double initial_score = calculateFinalPath(upgradePath);
+        double initial_score = calculateFinalPath(upgradePath, activeLevels);
         random_device seed;
         mt19937 randomEngine(seed());
         Logger logger(outputInterval);
-        SearchContext context{logger, resourceCounts, currentLevels};
+        SearchContext context{logger, resourceCounts, activeLevels};
         OptimizationPackage package = {upgradePath, initial_score, move(randomEngine)};
         optimizeUpgradePath(package, context);
         upgradePath = move(package.path);
         
-        finalScore =calculateFinalPath(upgradePath);
+        finalScore = calculateFinalPath(upgradePath, activeLevels);
         if (finalScore >= UltraScore) {
             UltraScore = finalScore;
             printVector(upgradePath, MyFile);
@@ -744,22 +814,23 @@ int main() {
     if (upgradePath.empty()) {          
         upgradePath = generateRandomPath();
     }
+    array<int, NUM_UPGRADES + 1> activeLevels(currentLevels);
     if (isFullPath) {
-        levelsCopy = adjustFullPath(levelsCopy);
+        activeLevels = adjustFullPath(activeLevels);
     }
 
-    double initial_score = calculateFinalPath(upgradePath);
+    double initial_score = calculateFinalPath(upgradePath, activeLevels);
 
     if (runOptimization) {
         random_device seed;
         mt19937 randomEngine(seed());
         Logger logger(outputInterval);
-        SearchContext context{logger, resourceCounts, currentLevels};
+        SearchContext context{logger, resourceCounts, activeLevels};
         OptimizationPackage package = {upgradePath, initial_score, move(randomEngine)};
         optimizeUpgradePath(package, context);
         upgradePath = move(package.path);
     }
-    finalScore = calculateFinalPath(upgradePath);
+    finalScore = calculateFinalPath(upgradePath, activeLevels);
     
     return 0;
 }   
