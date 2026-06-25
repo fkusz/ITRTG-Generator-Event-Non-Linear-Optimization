@@ -45,10 +45,10 @@ array<double, 12> resourceCounts = {
 };
 
 // Your current upgrade path/the path you want to optimize. If left blank, a random path will be generated.
-vector<int> upgradePath = {};
+vector<int> upgradePath = {7,11,9,11,9,24,};
 const bool isFullPath = false;
 const bool runOptimization = true; // Set false to only see the results and timings of your path
-const bool endlessMode = true; //Repeat optimization until *manually* stopped. Prints a path to file if it's better than every other previous path. Only works running locally
+const bool endlessMode = false; //Repeat optimization until *manually* stopped. Prints a path to file if it's better than every other previous path. Only works running locally
 
 // END USER SETTINGS ---------------------------------------------------------------------
 // ADVANCED SETTINGS ---------------------------------------------------------------------
@@ -214,7 +214,7 @@ void printFormattedResults(vector<int>& path, array<int, NUM_UPGRADES + 1>& simu
         << simulationResources[6] * (500.0 + DLs) / 5.0 
         << " (" << simulationResources[6] << " levels * cycles)" << "\n";
     cout << "Pet Stones: " << simulationResources[8] << "\n";
-    cout << "Research Points: " << simulationResources[9] * (0.5 + AL/100) << "\n";
+    cout << "Research Points: " << simulationResources[9] * (0.5 + ML/100) << "\n";
     cout << "Growth (" << UNLOCKED_PETS << " pets): " 
         << simulationResources[11] * UNLOCKED_PETS / 100.0 
         << " (" << simulationResources[11] << " levels * cycles)" << "\n";
@@ -306,7 +306,8 @@ void readoutUpgrade(int upgradeType, array<int,NUM_UPGRADES + 1>& levels, int el
     cout << upgradeNames[upgradeType] << " " << levels[upgradeType] 
         << " " << (int)elapsedSeconds/24/3600 << " days, " 
         << (int)elapsedSeconds/3600%24 << " hours, " 
-        << (int)elapsedSeconds/60%60 << " minutes" << "\n";
+        << (int)elapsedSeconds/60%60 << " minutes, "
+        << (int)elapsedSeconds%60 << " seconds" << "\n";
 }
 // END UTILITY FUNCTIONS ----------------------------------------------------------------
 // ALGORITHM FUNCTIONS ------------------------------------------------------------------

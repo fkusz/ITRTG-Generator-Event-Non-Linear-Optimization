@@ -62,3 +62,14 @@ busyTimesStart = {10, 34, 58, 82};
 busyTimesEnd   = {18, 42, 66, 90};
 ```
 * **Explanation:** You are telling the optimizer you'll step away starting in `10` hours (10:00 PM), and you'll be back in `18` hours (6:00 AM). Simply add `24` to each value to repeat it for subsequent days.
+
+---
+
+## OCR Auto-Sync (Local Python Script)
+
+If you have Python installed on Windows 10/11, you can use the optional companion script to automatically read your game screenshot and update the C++ file for you!
+
+1. **Install Dependencies**: Open a terminal/command prompt and run `pip install winsdk pillow`. *(Note: This uses the lightweight, native Windows OCR engine, so no heavy ML libraries are needed).*
+2. **Take a Screenshot**: Take a screenshot of the generator event resources grid and save it to the folder as `image.png` (or any other name).
+3. **Run the Script**: Run `python update_from_screenshot.py image.png`.
+4. **Compile**: The script will automatically parse the numbers and modify `Easter_2026.cpp`'s `currentLevels` and `resourceCounts` arrays. You can now compile and run!
