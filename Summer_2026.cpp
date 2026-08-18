@@ -25,9 +25,9 @@ const int EVENT_DURATION_DAYS = 14;
 const int EVENT_DURATION_HOURS = 0;
 const int EVENT_DURATION_MINUTES = 0;
 const int EVENT_DURATION_SECONDS = 0;
-const int UNLOCKED_PETS = 47;
-const int DLs = 3070;
-const int AL = 211;
+const int UNLOCKED_PETS = #ENTER_YOUR_UNLOCKED_PETS#;
+const int DLs = #ENTER_YOUR_DUNGEON_LEVELS#;
+const int AL = #ENTER_YOUR_ADVENTURE_LEVEL#;
 
 array<int, 25> currentLevels = { 
     // Current Production Levels
@@ -72,7 +72,7 @@ const vector<double> busyTimesStart =   {}; // The first hours, relative to the 
 const vector<double> busyTimesEnd =     {}; // The first hours, relative to the start of the simulation, you'll be able to purchase upgrades again
 // END ADVANCED SETTINGS ------------------------------------------------------------------
 // PROGRAM SETTINGS -----------------------------------------------------------------------
-constexpr array<const char*, 12> resourceNames = {"Blue", "White", "Mixed", "Blue/White", "Red", "Striped", "FREE_EXP", "Red/White", "PET_STONES", "RESEARCH_POINTS", "EVENT_CURRENCY", "GROWTH"};
+constexpr array<const char*, 12> resourceNames = {"Blue Seaweed", "Green Seaweed", "Suncream", "Purple Shell", "Crab", "Shovel", "FREE_EXP", "Coral", "PET_STONES", "RESEARCH_POINTS", "EVENT_CURRENCY", "GROWTH"};
 constexpr double INFINITY_VALUE = (1e100);
 constexpr int NUM_RESOURCES = resourceNames.size();
 constexpr int NUM_UPGRADES = NUM_RESOURCES * 2;
