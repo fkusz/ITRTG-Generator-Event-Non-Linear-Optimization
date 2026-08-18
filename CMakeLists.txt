@@ -22,7 +22,7 @@ elseif(MSVC)
 endif()
 
 # Executables
-add_executable(Easter_2026 "Easter_2026.cpp")
+add_executable(Summer_2026 "Summer_2026.cpp")
 
 # Ensure C++23 is applied to targets
-set_property(TARGET Easter_2026 PROPERTY CXX_STANDARD 23)
+set_property(TARGET Summer_2026 PROPERTY CXX_STANDARD 23)
