@@ -67,9 +67,44 @@ busyTimesEnd   = {18, 42, 66, 90};
 
 ## OCR Auto-Sync (Local Python Script)
 
-If you have Python installed on Windows 10/11, you can use the optional companion script to automatically read your game screenshot and update the C++ file for you!
+The optional Windows 10/11 companion script reads the fixed 3-by-4 generator
+grid even when seasonal item art and backgrounds change. It extracts:
 
-1. **Install Dependencies**: Open a terminal/command prompt and run `pip install winsdk pillow`. *(Note: This uses the lightweight, native Windows OCR engine, so no heavy ML libraries are needed).*
-2. **Take a Screenshot**: Take a screenshot of the generator event resources grid and save it to the folder as `image.png` (or any other name).
-3. **Run the Script**: Run `python update_from_screenshot.py image.png`.
-4. **Compile**: The script will automatically parse the numbers and modify `Easter_2026.cpp`'s `currentLevels` and `resourceCounts` arrays. You can now compile and run!
+- item names, production levels, speed levels, and resource counts;
+- displayed suffixes such as `4.082 million` (stored as `4082000`); and
+- the event time remaining.
+
+It updates `currentLevels`, `resourceCounts`, and the four
+`EVENT_DURATION_*` constants. Before writing, it checks the first six item names
+against the target optimizer so an Easter screenshot cannot accidentally update
+a Summer file.
+
+1. **Use 64-bit Python 3.14**: The extractor and native WinRT OCR packages are
+   tested with Python 3.14.4.
+2. **Install dependencies**:
+
+   ```powershell
+   py -m pip install -r requirements-ocr.txt
+   ```
+
+3. **Preview a screenshot without changing anything**:
+
+   ```powershell
+   py update_from_screenshot.py --dry-run "C:\path\to\screenshot.jpg"
+   ```
+
+4. **Update the current-year optimizer** (automatically selected when there is
+   exactly one `*_YEAR.cpp` file):
+
+   ```powershell
+   py update_from_screenshot.py "C:\path\to\screenshot.jpg"
+   ```
+
+   Or select it explicitly:
+
+   ```powershell
+   py update_from_screenshot.py --cpp Summer_2026.cpp "C:\path\to\screenshot.jpg"
+   ```
+
+Use `--show-ocr` for diagnostic text. `--force` bypasses event-name validation
+and should only be used when the target's item names intentionally differ.
